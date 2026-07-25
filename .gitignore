@@ -1,0 +1,19 @@
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE / Editor Settings
+.vscode/
+.idea/
+
+# Local Node Configuration (Keep your actual IP addresses private)
+nodes.json
+
+# Logs
+*.log
