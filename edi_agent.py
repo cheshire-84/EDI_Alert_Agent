@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -189,6 +189,45 @@ def cli_remove(name):
         print(f"[-] Removed node: {name}")
     else:
         print(f"[!] Node '{name}' not found.")
+
+def cli_edit(name, ip=None, port=None, clear_port=False):
+    cfg = load_config()
+    if name not in cfg["nodes"]:
+        print(f"[!] Node '{name}' not found.")
+        return
+
+    if ip is None and port is None and not clear_port:
+        print("[!] Nothing to update. Specify --ip and/or --port (or --clear-port).")
+        return
+    if port is not None and clear_port:
+        print("[!] Cannot use --port and --clear-port together.")
+        return
+    if ip is not None and not is_valid_ip(ip):
+        print(f"[!] '{ip}' is not a valid IP address.")
+        return
+    if port is not None and not is_valid_port(port):
+        print(f"[!] '{port}' is not a valid port number (must be 1-65535).")
+        return
+
+    node = cfg["nodes"][name]
+    if ip is not None:
+        node["ip"] = ip
+    if clear_port:
+        node["port"] = None
+    elif port is not None:
+        node["port"] = port
+
+    check_desc = f"TCP:{node['port']}" if node.get("port") else "ping"
+    print(f"[?] Re-checking '{name}' ({node['ip']}) via {check_desc}...", end=" ", flush=True)
+    is_online, latency_ms = check_target(node["ip"], node.get("port"))
+    node["status"] = "online" if is_online else "offline"
+    node["failures"] = 0 if is_online else 1
+    node["last_checked"] = time.time()
+    node["latency_ms"] = latency_ms
+    save_config(cfg)
+
+    status_str = "ONLINE" if is_online else "OFFLINE"
+    print(f"Done!\n[+] Updated node: {name} ({node['ip']}) -> Status: {status_str}")
 
 def format_latency(latency_ms):
     return f"{latency_ms:.0f} ms" if latency_ms is not None else "--"
@@ -494,6 +533,12 @@ if __name__ == "__main__":
     rem_parser = subparsers.add_parser("remove", help="Remove a monitored node")
     rem_parser.add_argument("name", help="Node identifier")
 
+    edit_parser = subparsers.add_parser("edit", help="Edit an existing node's IP or port check")
+    edit_parser.add_argument("name", help="Node identifier")
+    edit_parser.add_argument("--ip", help="New IP address")
+    edit_parser.add_argument("--port", type=int, help="Check this TCP port instead of ICMP ping")
+    edit_parser.add_argument("--clear-port", action="store_true", help="Revert to ICMP ping (remove port check)")
+
     subparsers.add_parser("list", help="List monitored nodes")
     subparsers.add_parser("test", help="Send a test notification")
     subparsers.add_parser("help", help="Open manual window")
@@ -505,6 +550,8 @@ if __name__ == "__main__":
         cli_add(args.name, args.ip, force=args.force, port=args.port)
     elif args.command == "remove":
         cli_remove(args.name)
+    elif args.command == "edit":
+        cli_edit(args.name, ip=args.ip, port=args.port, clear_port=args.clear_port)
     elif args.command == "list":
         cli_list()
     elif args.command == "test":

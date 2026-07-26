@@ -148,3 +148,73 @@ def test_cli_list_shows_check_method_and_status(capsys, monkeypatch):
     assert "plex" in out
     assert "TCP:32400" in out
     assert "ONLINE" in out
+
+
+# --- cli_edit ---
+
+def test_cli_edit_missing_node_warns(capsys):
+    edi_agent.cli_edit("ghost", ip="10.0.0.1")
+    assert "not found" in capsys.readouterr().out
+
+def test_cli_edit_no_changes_specified_warns(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    capsys.readouterr()
+    edi_agent.cli_edit("web")
+    assert "Nothing to update" in capsys.readouterr().out
+
+def test_cli_edit_port_and_clear_port_conflict(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    capsys.readouterr()
+    edi_agent.cli_edit("web", port=22, clear_port=True)
+    assert "Cannot use --port and --clear-port together" in capsys.readouterr().out
+
+def test_cli_edit_rejects_invalid_ip(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    capsys.readouterr()
+    edi_agent.cli_edit("web", ip="not-an-ip")
+    assert "not a valid IP" in capsys.readouterr().out
+    assert edi_agent.load_config()["nodes"]["web"]["ip"] == "10.0.0.1"
+
+def test_cli_edit_rejects_invalid_port(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    capsys.readouterr()
+    edi_agent.cli_edit("web", port=70000)
+    assert "not a valid port" in capsys.readouterr().out
+    assert edi_agent.load_config()["nodes"]["web"].get("port") is None
+
+def test_cli_edit_updates_ip_and_rechecks(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
+    edi_agent.cli_edit("web", ip="10.0.0.2")
+
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["ip"] == "10.0.0.2"
+    assert node["status"] == "offline"
+    assert node["failures"] == 1
+
+def test_cli_edit_adds_port_check(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("db", "10.0.0.5")
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 3.0) if port == 5432 else (False, None))
+    edi_agent.cli_edit("db", port=5432)
+
+    node = edi_agent.load_config()["nodes"]["db"]
+    assert node["port"] == 5432
+    assert node["status"] == "online"
+    assert node["latency_ms"] == 3.0
+
+def test_cli_edit_clear_port_reverts_to_ping(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("db", "10.0.0.5", port=5432)
+
+    edi_agent.cli_edit("db", clear_port=True)
+
+    node = edi_agent.load_config()["nodes"]["db"]
+    assert node["port"] is None

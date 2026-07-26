@@ -39,6 +39,12 @@ MANUAL_HTML = f"""
       <code>edi-agent remove &lt;name&gt;</code><br>
       <i>Example:</i> <code>edi-agent remove plex</code></li>
       <br>
+  <li><b>Edit a Monitored Node:</b><br>
+      <code>edi-agent edit &lt;name&gt; [--ip IP] [--port PORT] [--clear-port]</code><br>
+      <i>Example:</i> <code>edi-agent edit gateway --port 22</code><br>
+      Updates a node's IP and/or check method in place and re-validates it immediately &mdash;
+      no need to remove and re-add. <code>--clear-port</code> reverts a node back to ICMP ping.</li>
+      <br>
   <li><b>List All Monitored Nodes:</b><br>
       <code>edi-agent list</code><br>
       Outputs a table of registered nodes, their check method (ping or TCP port), last known status, consecutive failure count, latency, and last-checked time.</li>

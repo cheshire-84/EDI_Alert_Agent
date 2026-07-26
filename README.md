@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.1.0)</h1>
+  <h1>EDI Agent (v1.2.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -124,6 +124,7 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 | --- | --- | --- |
 | **Add Node** | `edi-agent add <name> <ip> [--port PORT] [--force]` | Validates IP format and reachability immediately, then registers node. With `--port`, checks that TCP port instead of ICMP ping — useful for confirming a specific service (Plex, PostgreSQL, Proxmox, etc.) is actually running. Refuses to overwrite an existing node unless `--force` is passed. |
 | **Remove Node** | `edi-agent remove <name>` | Unregisters node from the active registry. |
+| **Edit Node** | `edi-agent edit <name> [--ip IP] [--port PORT] [--clear-port]` | Updates a node's IP and/or port check in place and re-validates it immediately. `--clear-port` reverts the node back to ICMP ping. |
 | **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their check method (ping or TCP port), status, failure count, latency, and when they were last checked. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
@@ -141,6 +142,11 @@ edi-agent add plex 10.1.1.99
 edi-agent add plex 10.1.1.99 --port 32400       # Plex Media Server
 edi-agent add edi-database 10.1.1.20 --port 5432  # PostgreSQL
 edi-agent add pve-server 10.1.1.3 --port 8006   # Proxmox VE web UI
+
+# Edit a node in place (no need to remove + re-add)
+edi-agent edit plex --ip 10.1.1.150       # host got a new IP
+edi-agent edit gateway --port 22          # switch to a TCP port check
+edi-agent edit gateway --clear-port       # revert back to ICMP ping
 
 # List monitored hosts
 edi-agent list
