@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# EDI Agent (v1.0.0) - System Tray Node Monitor & Alert Agent
 import sys
 import json
 import subprocess
@@ -96,7 +97,7 @@ def cli_list():
 def cli_test():
     print("[*] Triggering test notification...")
     send_desktop_notification(
-        "EDI Agent (v1): Test",
+        "EDI Agent (v1.0.0): Test",
         "This is a test notification from EDI Agent! Desktop alerts are working.",
         urgency="critical"
     )
@@ -107,7 +108,7 @@ class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
         self.monitor_app = monitor_app
-        self.setWindowTitle("EDI Agent (v1) - Monitored Nodes")
+        self.setWindowTitle("EDI Agent (v1.0.0) - Monitored Nodes")
         self.resize(580, 400)
         
         if LOGO_PATH.exists():
@@ -127,7 +128,7 @@ class NodeManagerDialog(QDialog):
             logo_label.setPixmap(pixmap)
             header_layout.addWidget(logo_label)
         
-        title_label = QLabel("EDI Agent (v1)")
+        title_label = QLabel("EDI Agent (v1.0.0)")
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -223,7 +224,7 @@ class MonitorApp:
 
         # Context Menu
         self.menu = QMenu()
-        self.status_action = self.menu.addAction("EDI Agent (v1): Active")
+        self.status_action = self.menu.addAction("EDI Agent (v1.0.0): Active")
         self.status_action.setEnabled(False)
         self.menu.addSeparator()
 
@@ -253,7 +254,7 @@ class MonitorApp:
 
     def trigger_test_alert(self):
         self.tray.showMessage(
-            "EDI Agent (v1): Test",
+            "EDI Agent (v1.0.0): Test",
             "This is a test notification from EDI Agent!",
             QSystemTrayIcon.MessageIcon.Information,
             5000
@@ -313,7 +314,7 @@ class MonitorApp:
         sys.exit(self.app.exec())
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="EDI Agent (v1)")
+    parser = argparse.ArgumentParser(description="EDI Agent (v1.0.0)")
     subparsers = parser.add_subparsers(dest="command")
 
     add_parser = subparsers.add_parser("add", help="Add a node to monitor")

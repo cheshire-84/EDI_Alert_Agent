@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# EDI Agent (v1.0.0) - System Tray Node Monitor & Alert Agent
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -13,13 +14,13 @@ ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
 
 MANUAL_HTML = """
-<h2>EDI Agent (v1) - User Manual & Command Reference</h2>
+<h2>EDI Agent (v1.0.0) - User Manual & Command Reference</h2>
 
 <p><b>EDI Agent</b> is a background LAN node monitoring daemon and desktop tray application.</p>
 
 <hr>
 
-<h3>💻 Terminal CLI Commands</h3>
+<h3>Terminal CLI Commands</h3>
 <p>Run these commands from any terminal prompt across your system:</p>
 
 <ul>
@@ -47,7 +48,7 @@ MANUAL_HTML = """
 
 <hr>
 
-<h3>🖥️ Desktop UI & System Tray Features</h3>
+<h3>Desktop UI & System Tray Features</h3>
 <ul>
   <li><b>System Tray Icon:</b> Docks near the clock. Right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
   <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>).</li>
@@ -57,7 +58,7 @@ MANUAL_HTML = """
 
 <hr>
 
-<h3>⚙️ Configuration File Location</h3>
+<h3>Configuration File Location</h3>
 <p>Target registry configuration is stored in JSON format at:</p>
 <code>~/.config/edi-alert-agent/nodes.json</code>
 <p><i>The background systemd daemon dynamically reloads changes made via CLI in real-time.</i></p>
@@ -66,7 +67,7 @@ MANUAL_HTML = """
 class ManualDialog(QDialog):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EDI Agent (v1) - Help & Manual")
+        self.setWindowTitle("EDI Agent (v1.0.0) - Help & Manual")
         self.resize(600, 520)
 
         if LOGO_PATH.exists():
@@ -83,7 +84,7 @@ class ManualDialog(QDialog):
             logo_label.setPixmap(pixmap)
             header_layout.addWidget(logo_label)
 
-        title = QLabel("EDI Agent (v1) Help")
+        title = QLabel("EDI Agent (v1.0.0) Help")
         font = QFont()
         font.setPointSize(14)
         font.setBold(True)
