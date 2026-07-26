@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.0.3)</h1>
+  <h1>EDI Agent (v1.0.4)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -119,7 +119,7 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 | --- | --- | --- |
 | **Add Node** | `edi-agent add <name> <ip> [--force]` | Validates IP format and reachability immediately, then registers node. Refuses to overwrite an existing node unless `--force` is passed. |
 | **Remove Node** | `edi-agent remove <name>` | Unregisters node from the active registry. |
-| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their status, and consecutive failure count. |
+| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their status, failure count, ping latency, and when they were last checked. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
 | **Run GUI** | `edi-agent gui` | Launches background tray app directly (used by systemd). |
@@ -147,7 +147,7 @@ edi-agent help
 ## Graphical Interface & System Tray
 
 * **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
-* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`) and a consecutive-failure count per node.
+* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), consecutive-failure count, ping latency, and last-checked time per node.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
 * **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.
 
@@ -169,16 +169,22 @@ Example configuration:
     "gateway": {
       "ip": "10.1.1.1",
       "status": "online",
-      "failures": 0
+      "failures": 0,
+      "last_checked": 1753500000.0,
+      "latency_ms": 1.8
     },
     "plex": {
       "ip": "10.1.1.99",
       "status": "online",
-      "failures": 0
+      "failures": 0,
+      "last_checked": 1753500000.0,
+      "latency_ms": 4.2
     }
   }
 }
 ```
+
+> **Note:** `last_checked` is a Unix timestamp; `latency_ms` is `null` while a node is offline.
 
 > **Note:** The background service watches this file continuously. Adding or removing nodes via the CLI immediately updates the background daemon without requiring a service restart.
 

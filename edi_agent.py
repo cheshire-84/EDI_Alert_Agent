@@ -2,12 +2,14 @@
 # EDI Agent - System Tray Node Monitor & Alert Agent
 import sys
 import json
+import time
 import fcntl
 import ipaddress
 import subprocess
 import argparse
 import concurrent.futures
 from pathlib import Path
+from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QDialog,
     QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -16,7 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -69,17 +71,20 @@ def ping_nodes_concurrently(nodes):
             try:
                 results[name] = future.result()
             except Exception:
-                results[name] = False
+                results[name] = (False, None)
     return results
 
 def ping_node(ip):
-    # Single ICMP ping with 1-second timeout on Linux
+    # Single ICMP ping with 1-second timeout on Linux. Returns (is_online, latency_ms).
+    start = time.monotonic()
     res = subprocess.run(
         ["ping", "-c", "1", "-W", "1", ip],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
-    return res.returncode == 0
+    is_online = res.returncode == 0
+    latency_ms = round((time.monotonic() - start) * 1000, 1) if is_online else None
+    return is_online, latency_ms
 
 def send_desktop_notification(title, message, urgency="normal"):
     try:
@@ -134,13 +139,15 @@ def cli_add(name, ip, force=False):
         return
 
     print(f"[?] Checking reachability for '{name}' ({ip})...", end=" ", flush=True)
-    is_online = ping_node(ip)
+    is_online, latency_ms = ping_node(ip)
     status = "online" if is_online else "offline"
 
     cfg["nodes"][name] = {
         "ip": ip,
         "status": status,
-        "failures": 0 if is_online else 1
+        "failures": 0 if is_online else 1,
+        "last_checked": time.time(),
+        "latency_ms": latency_ms
     }
     save_config(cfg)
 
@@ -156,17 +163,25 @@ def cli_remove(name):
     else:
         print(f"[!] Node '{name}' not found.")
 
+def format_latency(latency_ms):
+    return f"{latency_ms:.0f} ms" if latency_ms is not None else "--"
+
+def format_last_checked(timestamp):
+    return datetime.fromtimestamp(timestamp).strftime("%H:%M:%S") if timestamp else "never"
+
 def cli_list():
     cfg = load_config()
     if not cfg["nodes"]:
         print("No nodes currently monitored.")
         return
-    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'STATUS':<10} {'FAILURES'}")
-    print("-" * 60)
+    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'STATUS':<10} {'FAILURES':<10} {'LATENCY':<10} {'LAST CHECKED'}")
+    print("-" * 90)
     for name, data in cfg["nodes"].items():
         status = data.get('status', 'unknown').upper()
         failures = data.get('failures', 0)
-        print(f"{name:<20} {data['ip']:<18} {status:<10} {failures}")
+        latency = format_latency(data.get('latency_ms'))
+        last_checked = format_last_checked(data.get('last_checked'))
+        print(f"{name:<20} {data['ip']:<18} {status:<10} {failures:<10} {latency:<10} {last_checked}")
     print()
 
 def cli_test():
@@ -223,8 +238,10 @@ class NodeManagerDialog(QDialog):
         
         # --- TABLE SECTION ---
         self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Node Name", "IP Address", "Status", "Failures"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(
+            ["Node Name", "IP Address", "Status", "Failures", "Latency", "Last Checked"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSortingEnabled(True)
         layout.addWidget(self.table)
@@ -253,8 +270,12 @@ class NodeManagerDialog(QDialog):
         else:
             cfg = load_config()
             results = ping_nodes_concurrently(cfg["nodes"])
+            now = time.time()
             for name, info in cfg["nodes"].items():
-                info["status"] = "online" if results.get(name, False) else "offline"
+                is_online, latency_ms = results.get(name, (False, None))
+                info["status"] = "online" if is_online else "offline"
+                info["last_checked"] = now
+                info["latency_ms"] = latency_ms
             save_config(cfg)
             
         self.reload_data()
@@ -274,9 +295,13 @@ class NodeManagerDialog(QDialog):
             item_status = QTableWidgetItem(status)
             item_failures = QTableWidgetItem()
             item_failures.setData(Qt.DisplayRole, failures)
+            item_latency = QTableWidgetItem(format_latency(info.get("latency_ms")))
+            item_last_checked = QTableWidgetItem(format_last_checked(info.get("last_checked")))
 
             item_status.setTextAlignment(Qt.AlignCenter)
             item_failures.setTextAlignment(Qt.AlignCenter)
+            item_latency.setTextAlignment(Qt.AlignCenter)
+            item_last_checked.setTextAlignment(Qt.AlignCenter)
             if status == "ONLINE":
                 item_status.setForeground(QColor("#2ecc71"))
             elif status == "OFFLINE":
@@ -290,6 +315,8 @@ class NodeManagerDialog(QDialog):
             self.table.setItem(row, 1, item_ip)
             self.table.setItem(row, 2, item_status)
             self.table.setItem(row, 3, item_failures)
+            self.table.setItem(row, 4, item_latency)
+            self.table.setItem(row, 5, item_last_checked)
         self.table.setSortingEnabled(True)
 
 class MonitorApp:
@@ -348,21 +375,26 @@ class MonitorApp:
 
     def check_nodes(self):
         cfg = load_config()
-        updated = False
+        if not cfg["nodes"]:
+            self.refresh_tray_icon(cfg)
+            return
 
         results = ping_nodes_concurrently(cfg["nodes"])
+        now = time.time()
         for name, info in cfg["nodes"].items():
             ip = info["ip"]
-            is_online = results.get(name, False)
+            is_online, latency_ms = results.get(name, (False, None))
             prev_status = info.get("status", "unknown")
             failures = info.get("failures", 0)
+
+            info["last_checked"] = now
+            info["latency_ms"] = latency_ms
 
             if not is_online:
                 failures += 1
                 info["failures"] = failures
                 if failures >= 2 and prev_status != "offline":
                     info["status"] = "offline"
-                    updated = True
                     self.tray.showMessage(
                         "EDI ALERT: Node Offline",
                         f"ALERT: '{name}' ({ip}) is unreachable!",
@@ -373,7 +405,6 @@ class MonitorApp:
                 info["failures"] = 0
                 if prev_status != "online":
                     info["status"] = "online"
-                    updated = True
                     if prev_status == "offline":
                         self.tray.showMessage(
                             "EDI ALERT: Node Restored",
@@ -382,9 +413,7 @@ class MonitorApp:
                             5000
                         )
 
-        if updated:
-            save_config(cfg)
-
+        save_config(cfg)
         self.refresh_tray_icon(cfg)
 
         if self.dialog and self.dialog.isVisible():

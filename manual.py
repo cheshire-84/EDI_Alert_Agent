@@ -38,7 +38,7 @@ MANUAL_HTML = f"""
       <br>
   <li><b>List All Monitored Nodes:</b><br>
       <code>edi-agent list</code><br>
-      Outputs a table of registered nodes, their last known status, and consecutive failure count.</li>
+      Outputs a table of registered nodes, their last known status, consecutive failure count, ping latency, and last-checked time.</li>
       <br>
   <li><b>Test Desktop Notifications:</b><br>
       <code>edi-agent test</code><br>
@@ -54,7 +54,7 @@ MANUAL_HTML = f"""
 <h3>Desktop UI & System Tray Features</h3>
 <ul>
   <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
-  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>) and a failure count column. Click any column header to sort.</li>
+  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), failure count, ping latency, and last-checked time. Click any column header to sort.</li>
   <li><b>Refresh / Check Now:</b> Pings all monitored nodes on demand.</li>
   <li><b>Help Button (<code>?</code>):</b> Click the <code>?</code> button at the top right of the status window to open this manual anytime.</li>
 </ul>
