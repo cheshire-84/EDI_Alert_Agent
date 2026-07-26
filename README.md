@@ -29,13 +29,17 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 EDI_Alert_Agent/
 ├── assets/
 │   └── app_logo.png     # Application branding icon (Tray, Window Header, Notifications)
+├── tests/
+│   └── test_edi_agent.py  # pytest unit tests for CLI, config, and check logic
+├── conftest.py          # Shared pytest fixtures (isolates tests from your real config)
 ├── edi_agent.py         # Core monitoring daemon & tray application logic
 ├── install.sh           # One-click automated setup & systemd service installer
 ├── uninstall.sh         # Removes the service, CLI wrapper, and venv
 ├── LICENSE              # Open-source MIT License
 ├── manual.py            # Interactive PySide6 Help & User Manual window
 ├── README.md            # Project documentation
-└── requirements.txt     # Python dependency manifest (PySide6)
+├── requirements.txt     # Python dependency manifest (PySide6)
+└── requirements-dev.txt # Adds pytest for running the test suite
 ```
 
 ---
@@ -205,6 +209,18 @@ Example configuration:
 * **`edi-agent: command not found`:** Ensure `~/.local/bin` is in your shell `$PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your `~/.bashrc`.
 * **Notifications Not Appearing:** Ensure `libnotify` is installed on your system (`sudo dnf install libnotify`) and test via `notify-send "Test" "Message"`.
 * **Inspect Service Logs:** Run `journalctl --user -u edi-alert-agent.service -f` to view live execution logs and ping outputs.
+
+---
+
+## Development & Testing
+
+Unit tests cover the CLI commands, config persistence, and reachability-check logic (mocked, so tests never touch the network or your real `nodes.json`):
+
+```bash
+source venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
 
 ---
 
