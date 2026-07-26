@@ -1,19 +1,20 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.0.4)</h1>
+  <h1>EDI Agent (v1.1.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
 **EDI Agent** is a lightweight, background LAN node monitoring daemon and desktop application built specifically for **Fedora KDE Plasma** (and Qt/systemd-based Linux desktops). 
 
-It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web applications, databases, etc.) using non-intrusive ICMP pings and delivers native desktop notification popups over DBus whenever a node drops offline or recovers.
+It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web applications, databases, etc.) using non-intrusive ICMP pings — or an optional TCP port check to verify a specific service is actually running, not just that the host is reachable — and delivers native desktop notification popups over DBus whenever a node drops offline or recovers.
 
 ---
 
 ## Key Features
 
 * **Native KDE Plasma System Tray:** Integrates seamlessly near the desktop clock using PySide6 (Qt6) with custom branding, and a live green/red health badge on the icon itself.
-* **Non-Intrusive Ping Strategy:** Asynchronous ICMP checks every 30 seconds with 1-second strict timeouts to prevent network bottlenecks.
+* **Non-Intrusive Ping Strategy:** Concurrent ICMP checks every 30 seconds with 1-second strict timeouts to prevent network bottlenecks.
+* **Optional Service-Level Port Checks:** Monitor a specific TCP port instead of ICMP (e.g. `5432` for PostgreSQL, `32400` for Plex, `8006` for Proxmox) to confirm the actual service is up, not just the host.
 * **3-Strike Failure Protection:** Requires 2 consecutive failed pings before triggering a critical desktop popup to prevent false alarms over Wi-Fi.
 * **Unified CLI & GUI:** Full control from any terminal (`edi-agent`) alongside a tray-docked GUI featuring real-time refresh capability.
 * **Instant Reachability Validation:** Automatically tests host reachability immediately when adding new nodes via the CLI.
@@ -117,9 +118,9 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 
 | Command | Usage | Description |
 | --- | --- | --- |
-| **Add Node** | `edi-agent add <name> <ip> [--force]` | Validates IP format and reachability immediately, then registers node. Refuses to overwrite an existing node unless `--force` is passed. |
+| **Add Node** | `edi-agent add <name> <ip> [--port PORT] [--force]` | Validates IP format and reachability immediately, then registers node. With `--port`, checks that TCP port instead of ICMP ping — useful for confirming a specific service (Plex, PostgreSQL, Proxmox, etc.) is actually running. Refuses to overwrite an existing node unless `--force` is passed. |
 | **Remove Node** | `edi-agent remove <name>` | Unregisters node from the active registry. |
-| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their status, failure count, ping latency, and when they were last checked. |
+| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their check method (ping or TCP port), status, failure count, latency, and when they were last checked. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
 | **Run GUI** | `edi-agent gui` | Launches background tray app directly (used by systemd). |
@@ -131,6 +132,11 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 edi-agent add gateway 10.1.1.1
 edi-agent add pve-server 10.1.1.3
 edi-agent add plex 10.1.1.99
+
+# Add nodes with a service-level TCP port check instead of ICMP ping
+edi-agent add plex 10.1.1.99 --port 32400       # Plex Media Server
+edi-agent add edi-database 10.1.1.20 --port 5432  # PostgreSQL
+edi-agent add pve-server 10.1.1.3 --port 8006   # Proxmox VE web UI
 
 # List monitored hosts
 edi-agent list
@@ -147,7 +153,7 @@ edi-agent help
 ## Graphical Interface & System Tray
 
 * **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
-* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), consecutive-failure count, ping latency, and last-checked time per node.
+* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), the check method (ping or TCP port), consecutive-failure count, latency, and last-checked time per node.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
 * **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.
 
@@ -168,6 +174,7 @@ Example configuration:
   "nodes": {
     "gateway": {
       "ip": "10.1.1.1",
+      "port": null,
       "status": "online",
       "failures": 0,
       "last_checked": 1753500000.0,
@@ -175,6 +182,7 @@ Example configuration:
     },
     "plex": {
       "ip": "10.1.1.99",
+      "port": 32400,
       "status": "online",
       "failures": 0,
       "last_checked": 1753500000.0,
@@ -183,6 +191,8 @@ Example configuration:
   }
 }
 ```
+
+> **Note:** `port` is `null` for nodes checked via ICMP ping, or a TCP port number for nodes checked via a service-level port test.
 
 > **Note:** `last_checked` is a Unix timestamp; `latency_ms` is `null` while a node is offline.
 

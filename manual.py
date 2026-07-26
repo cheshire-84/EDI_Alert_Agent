@@ -27,10 +27,13 @@ MANUAL_HTML = f"""
 
 <ul>
   <li><b>Add a Monitored Node:</b><br>
-      <code>edi-agent add &lt;name&gt; &lt;ip&gt;</code><br>
-      <i>Example:</i> <code>edi-agent add plex 10.1.1.99</code><br>
+      <code>edi-agent add &lt;name&gt; &lt;ip&gt; [--port PORT]</code><br>
+      <i>Example:</i> <code>edi-agent add plex 10.1.1.99 --port 32400</code><br>
       <i>Note:</i> Performs an immediate reachability check upon adding. Rejects invalid IP addresses,
-      and refuses to overwrite an existing node unless you add <code>--force</code>.</li>
+      and refuses to overwrite an existing node unless you add <code>--force</code>. Add
+      <code>--port</code> to check a specific TCP service (e.g. <code>5432</code> for PostgreSQL,
+      <code>32400</code> for Plex, <code>8006</code> for Proxmox) instead of a plain ICMP ping &mdash;
+      this confirms the service itself is running, not just that the host is reachable.</li>
       <br>
   <li><b>Remove a Monitored Node:</b><br>
       <code>edi-agent remove &lt;name&gt;</code><br>
@@ -38,7 +41,7 @@ MANUAL_HTML = f"""
       <br>
   <li><b>List All Monitored Nodes:</b><br>
       <code>edi-agent list</code><br>
-      Outputs a table of registered nodes, their last known status, consecutive failure count, ping latency, and last-checked time.</li>
+      Outputs a table of registered nodes, their check method (ping or TCP port), last known status, consecutive failure count, latency, and last-checked time.</li>
       <br>
   <li><b>Test Desktop Notifications:</b><br>
       <code>edi-agent test</code><br>
@@ -54,7 +57,7 @@ MANUAL_HTML = f"""
 <h3>Desktop UI & System Tray Features</h3>
 <ul>
   <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
-  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), failure count, ping latency, and last-checked time. Click any column header to sort.</li>
+  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), the check method (ping or TCP port), failure count, latency, and last-checked time. Click any column header to sort.</li>
   <li><b>Refresh / Check Now:</b> Pings all monitored nodes on demand.</li>
   <li><b>Help Button (<code>?</code>):</b> Click the <code>?</code> button at the top right of the status window to open this manual anytime.</li>
 </ul>

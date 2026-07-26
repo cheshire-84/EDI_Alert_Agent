@@ -4,6 +4,7 @@ import sys
 import json
 import time
 import fcntl
+import socket
 import ipaddress
 import subprocess
 import argparse
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.0.4"
+__version__ = "1.1.0"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -56,14 +57,17 @@ def is_valid_ip(ip):
     except ValueError:
         return False
 
+def is_valid_port(port):
+    return 1 <= port <= 65535
+
 def ping_nodes_concurrently(nodes):
-    """Ping all nodes in parallel so a 30-node fleet doesn't take 30 seconds to check."""
+    """Check all nodes in parallel so a 30-node fleet doesn't take 30 seconds to check."""
     results = {}
     if not nodes:
         return results
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(nodes))) as executor:
         future_to_name = {
-            executor.submit(ping_node, info["ip"]): name
+            executor.submit(check_target, info["ip"], info.get("port")): name
             for name, info in nodes.items()
         }
         for future in concurrent.futures.as_completed(future_to_name):
@@ -73,6 +77,23 @@ def ping_nodes_concurrently(nodes):
             except Exception:
                 results[name] = (False, None)
     return results
+
+def check_target(ip, port=None):
+    """Returns (is_online, latency_ms). Uses a TCP port check if a port is given,
+    otherwise falls back to an ICMP ping."""
+    if port:
+        return check_port(ip, port)
+    return ping_node(ip)
+
+def check_port(ip, port, timeout=1):
+    # Real TCP handshake to the service port, not just host reachability.
+    start = time.monotonic()
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            latency_ms = round((time.monotonic() - start) * 1000, 1)
+            return True, latency_ms
+    except OSError:
+        return False, None
 
 def ping_node(ip):
     # Single ICMP ping with 1-second timeout on Linux. Returns (is_online, latency_ms).
@@ -127,9 +148,13 @@ def build_badged_icon(base_pixmap, badge_color):
     return QIcon(pixmap)
 
 # --- CLI COMMANDS ---
-def cli_add(name, ip, force=False):
+def cli_add(name, ip, force=False, port=None):
     if not is_valid_ip(ip):
         print(f"[!] '{ip}' is not a valid IP address.")
+        return
+
+    if port is not None and not is_valid_port(port):
+        print(f"[!] '{port}' is not a valid port number (must be 1-65535).")
         return
 
     cfg = load_config()
@@ -138,12 +163,14 @@ def cli_add(name, ip, force=False):
               f"Use --force to overwrite, or 'edi-agent remove {name}' first.")
         return
 
-    print(f"[?] Checking reachability for '{name}' ({ip})...", end=" ", flush=True)
-    is_online, latency_ms = ping_node(ip)
+    check_desc = f"TCP:{port}" if port else "ping"
+    print(f"[?] Checking reachability for '{name}' ({ip}) via {check_desc}...", end=" ", flush=True)
+    is_online, latency_ms = check_target(ip, port)
     status = "online" if is_online else "offline"
 
     cfg["nodes"][name] = {
         "ip": ip,
+        "port": port,
         "status": status,
         "failures": 0 if is_online else 1,
         "last_checked": time.time(),
@@ -169,19 +196,23 @@ def format_latency(latency_ms):
 def format_last_checked(timestamp):
     return datetime.fromtimestamp(timestamp).strftime("%H:%M:%S") if timestamp else "never"
 
+def format_check_method(port):
+    return f"TCP:{port}" if port else "ping"
+
 def cli_list():
     cfg = load_config()
     if not cfg["nodes"]:
         print("No nodes currently monitored.")
         return
-    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'STATUS':<10} {'FAILURES':<10} {'LATENCY':<10} {'LAST CHECKED'}")
-    print("-" * 90)
+    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'CHECK':<10} {'STATUS':<10} {'FAILURES':<10} {'LATENCY':<10} {'LAST CHECKED'}")
+    print("-" * 100)
     for name, data in cfg["nodes"].items():
         status = data.get('status', 'unknown').upper()
         failures = data.get('failures', 0)
+        check_method = format_check_method(data.get('port'))
         latency = format_latency(data.get('latency_ms'))
         last_checked = format_last_checked(data.get('last_checked'))
-        print(f"{name:<20} {data['ip']:<18} {status:<10} {failures:<10} {latency:<10} {last_checked}")
+        print(f"{name:<20} {data['ip']:<18} {check_method:<10} {status:<10} {failures:<10} {latency:<10} {last_checked}")
     print()
 
 def cli_test():
@@ -238,9 +269,9 @@ class NodeManagerDialog(QDialog):
         
         # --- TABLE SECTION ---
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(
-            ["Node Name", "IP Address", "Status", "Failures", "Latency", "Last Checked"]
+            ["Node Name", "IP Address", "Check", "Status", "Failures", "Latency", "Last Checked"]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSortingEnabled(True)
@@ -292,12 +323,14 @@ class NodeManagerDialog(QDialog):
 
             item_name = QTableWidgetItem(name)
             item_ip = QTableWidgetItem(info["ip"])
+            item_check = QTableWidgetItem(format_check_method(info.get("port")))
             item_status = QTableWidgetItem(status)
             item_failures = QTableWidgetItem()
             item_failures.setData(Qt.DisplayRole, failures)
             item_latency = QTableWidgetItem(format_latency(info.get("latency_ms")))
             item_last_checked = QTableWidgetItem(format_last_checked(info.get("last_checked")))
 
+            item_check.setTextAlignment(Qt.AlignCenter)
             item_status.setTextAlignment(Qt.AlignCenter)
             item_failures.setTextAlignment(Qt.AlignCenter)
             item_latency.setTextAlignment(Qt.AlignCenter)
@@ -313,10 +346,11 @@ class NodeManagerDialog(QDialog):
 
             self.table.setItem(row, 0, item_name)
             self.table.setItem(row, 1, item_ip)
-            self.table.setItem(row, 2, item_status)
-            self.table.setItem(row, 3, item_failures)
-            self.table.setItem(row, 4, item_latency)
-            self.table.setItem(row, 5, item_last_checked)
+            self.table.setItem(row, 2, item_check)
+            self.table.setItem(row, 3, item_status)
+            self.table.setItem(row, 4, item_failures)
+            self.table.setItem(row, 5, item_latency)
+            self.table.setItem(row, 6, item_last_checked)
         self.table.setSortingEnabled(True)
 
 class MonitorApp:
@@ -454,6 +488,8 @@ if __name__ == "__main__":
     add_parser.add_argument("name", help="Node identifier (e.g. plex)")
     add_parser.add_argument("ip", help="IP address (e.g. 10.1.1.99)")
     add_parser.add_argument("--force", action="store_true", help="Overwrite an existing node with the same name")
+    add_parser.add_argument("--port", type=int, default=None,
+                             help="Check this TCP port instead of ICMP ping (e.g. 5432 for Postgres, 32400 for Plex)")
 
     rem_parser = subparsers.add_parser("remove", help="Remove a monitored node")
     rem_parser.add_argument("name", help="Node identifier")
@@ -466,7 +502,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.command == "add":
-        cli_add(args.name, args.ip, force=args.force)
+        cli_add(args.name, args.ip, force=args.force, port=args.port)
     elif args.command == "remove":
         cli_remove(args.name)
     elif args.command == "list":
