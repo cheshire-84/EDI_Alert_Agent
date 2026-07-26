@@ -14,12 +14,12 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QDialog,
     QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QPushButton, QLabel
+    QHeaderView, QPushButton, QLabel, QLineEdit
 )
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -264,6 +264,71 @@ def cli_test():
     print("[+] Test notification sent to desktop.")
 
 # --- GUI / SYSTEM TRAY ---
+class EditNodeDialog(QDialog):
+    def __init__(self, name, node_info, parent=None):
+        super().__init__(parent)
+        self.name = name
+        self.setWindowTitle(f"Edit Node: {name}")
+        self.resize(360, 170)
+
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        ip_row = QHBoxLayout()
+        ip_row.addWidget(QLabel("IP Address:"))
+        self.ip_input = QLineEdit(node_info.get("ip", ""))
+        ip_row.addWidget(self.ip_input)
+        layout.addLayout(ip_row)
+
+        port_row = QHBoxLayout()
+        port_row.addWidget(QLabel("Port (blank = ICMP ping):"))
+        self.port_input = QLineEdit(str(node_info["port"]) if node_info.get("port") else "")
+        self.port_input.setPlaceholderText("e.g. 5432, 32400, 8006")
+        port_row.addWidget(self.port_input)
+        layout.addLayout(port_row)
+
+        self.error_label = QLabel("")
+        self.error_label.setStyleSheet("color: #e74c3c;")
+        self.error_label.setWordWrap(True)
+        layout.addWidget(self.error_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton("Save")
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self.on_save)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+    def on_save(self):
+        ip = self.ip_input.text().strip()
+        port_text = self.port_input.text().strip()
+
+        if not is_valid_ip(ip):
+            self.error_label.setText(f"'{ip}' is not a valid IP address.")
+            return
+
+        port = None
+        clear_port = (port_text == "")
+        if port_text:
+            if not port_text.isdigit():
+                self.error_label.setText("Port must be a number.")
+                return
+            port = int(port_text)
+            if not is_valid_port(port):
+                self.error_label.setText("Port must be between 1 and 65535.")
+                return
+
+        cli_edit(self.name, ip=ip, port=port, clear_port=clear_port)
+        self.accept()
+
 class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
@@ -314,21 +379,46 @@ class NodeManagerDialog(QDialog):
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSortingEnabled(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.itemDoubleClicked.connect(self.open_edit_dialog)
         layout.addWidget(self.table)
-        
+
         # --- ACTION BAR SECTION ---
         action_layout = QHBoxLayout()
-        self.info_label = QLabel("Auto-checking every 30s")
+        self.info_label = QLabel("Auto-checking every 30s • double-click a row to edit")
+        self.edit_btn = QPushButton("Edit Selected")
+        self.edit_btn.clicked.connect(self.open_edit_dialog_for_selection)
         self.refresh_btn = QPushButton("Refresh / Check Now")
         self.refresh_btn.clicked.connect(self.manual_refresh)
-        
+
         action_layout.addWidget(self.info_label)
         action_layout.addStretch()
+        action_layout.addWidget(self.edit_btn)
         action_layout.addWidget(self.refresh_btn)
-        
+
         layout.addLayout(action_layout)
-        
+
         self.reload_data()
+
+    def open_edit_dialog_for_selection(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        self.open_edit_dialog(self.table.item(row, 0))
+
+    def open_edit_dialog(self, item):
+        row = item.row()
+        name = self.table.item(row, 0).text()
+        cfg = load_config()
+        node = cfg["nodes"].get(name)
+        if not node:
+            return
+
+        dialog = EditNodeDialog(name, node, parent=self)
+        if dialog.exec():
+            self.reload_data()
+            if self.monitor_app:
+                self.monitor_app.refresh_tray_icon(load_config())
 
     def manual_refresh(self):
         self.refresh_btn.setEnabled(False)

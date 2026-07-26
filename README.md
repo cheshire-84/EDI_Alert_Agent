@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.2.0)</h1>
+  <h1>EDI Agent (v1.3.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -164,6 +164,7 @@ edi-agent help
 
 * **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
 * **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), the check method (ping or TCP port), consecutive-failure count, latency, and last-checked time per node.
+* **Edit Node:** Double-click any row (or select it and click **Edit Selected**) to change a node's IP or check method without dropping to the terminal. Re-validates the node as soon as you save.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
 * **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.
 

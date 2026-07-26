@@ -64,6 +64,7 @@ MANUAL_HTML = f"""
 <ul>
   <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
   <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), the check method (ping or TCP port), failure count, latency, and last-checked time. Click any column header to sort.</li>
+  <li><b>Edit Node:</b> Double-click a row (or select it and click <b>Edit Selected</b>) to change its IP or check method without using the terminal. Saving re-validates the node immediately.</li>
   <li><b>Refresh / Check Now:</b> Pings all monitored nodes on demand.</li>
   <li><b>Help Button (<code>?</code>):</b> Click the <code>?</code> button at the top right of the status window to open this manual anytime.</li>
 </ul>

@@ -218,3 +218,51 @@ def test_cli_edit_clear_port_reverts_to_ping(monkeypatch):
 
     node = edi_agent.load_config()["nodes"]["db"]
     assert node["port"] is None
+
+
+# --- EditNodeDialog (GUI) ---
+
+def test_edit_dialog_saves_valid_changes(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 2.0))
+    dialog = edi_agent.EditNodeDialog("web", edi_agent.load_config()["nodes"]["web"])
+    dialog.ip_input.setText("10.0.0.2")
+    dialog.port_input.setText("2222")
+    dialog.on_save()
+
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["ip"] == "10.0.0.2"
+    assert node["port"] == 2222
+
+def test_edit_dialog_rejects_invalid_ip_without_saving(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.EditNodeDialog("web", edi_agent.load_config()["nodes"]["web"])
+    dialog.ip_input.setText("garbage")
+    dialog.on_save()
+
+    assert "not a valid IP" in dialog.error_label.text()
+    assert edi_agent.load_config()["nodes"]["web"]["ip"] == "10.0.0.1"
+
+def test_edit_dialog_rejects_non_numeric_port(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.EditNodeDialog("web", edi_agent.load_config()["nodes"]["web"])
+    dialog.port_input.setText("not-a-port")
+    dialog.on_save()
+
+    assert "Port must be a number" in dialog.error_label.text()
+
+def test_edit_dialog_blank_port_clears_existing_port(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("db", "10.0.0.5", port=5432)
+
+    dialog = edi_agent.EditNodeDialog("db", edi_agent.load_config()["nodes"]["db"])
+    dialog.port_input.setText("")
+    dialog.on_save()
+
+    assert edi_agent.load_config()["nodes"]["db"]["port"] is None
