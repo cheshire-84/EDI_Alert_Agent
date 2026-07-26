@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -135,10 +135,12 @@ def cli_list():
     if not cfg["nodes"]:
         print("No nodes currently monitored.")
         return
-    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'STATUS'}")
-    print("-" * 50)
+    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'STATUS':<10} {'FAILURES'}")
+    print("-" * 60)
     for name, data in cfg["nodes"].items():
-        print(f"{name:<20} {data['ip']:<18} {data.get('status', 'unknown').upper()}")
+        status = data.get('status', 'unknown').upper()
+        failures = data.get('failures', 0)
+        print(f"{name:<20} {data['ip']:<18} {status:<10} {failures}")
     print()
 
 def cli_test():
@@ -195,9 +197,10 @@ class NodeManagerDialog(QDialog):
         
         # --- TABLE SECTION ---
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Node Name", "IP Address", "Status"])
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Node Name", "IP Address", "Status", "Failures"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSortingEnabled(True)
         layout.addWidget(self.table)
         
         # --- ACTION BAR SECTION ---
@@ -234,25 +237,34 @@ class NodeManagerDialog(QDialog):
 
     def reload_data(self):
         cfg = load_config()
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(cfg["nodes"]))
         for row, (name, info) in enumerate(cfg["nodes"].items()):
             status = info.get("status", "unknown").upper()
-            
+            failures = info.get("failures", 0)
+
             item_name = QTableWidgetItem(name)
             item_ip = QTableWidgetItem(info["ip"])
             item_status = QTableWidgetItem(status)
-            
+            item_failures = QTableWidgetItem()
+            item_failures.setData(Qt.DisplayRole, failures)
+
             item_status.setTextAlignment(Qt.AlignCenter)
+            item_failures.setTextAlignment(Qt.AlignCenter)
             if status == "ONLINE":
                 item_status.setForeground(QColor("#2ecc71"))
             elif status == "OFFLINE":
                 item_status.setForeground(QColor("#e74c3c"))
             else:
                 item_status.setForeground(QColor("#95a5a6"))
-                
+            if failures > 0:
+                item_failures.setForeground(QColor("#e67e22"))
+
             self.table.setItem(row, 0, item_name)
             self.table.setItem(row, 1, item_ip)
             self.table.setItem(row, 2, item_status)
+            self.table.setItem(row, 3, item_failures)
+        self.table.setSortingEnabled(True)
 
 class MonitorApp:
     def __init__(self):

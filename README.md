@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.0.1)</h1>
+  <h1>EDI Agent (v1.0.2)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -30,6 +30,7 @@ EDI_Alert_Agent/
 │   └── app_logo.png     # Application branding icon (Tray, Window Header, Notifications)
 ├── edi_agent.py         # Core monitoring daemon & tray application logic
 ├── install.sh           # One-click automated setup & systemd service installer
+├── uninstall.sh         # Removes the service, CLI wrapper, and venv
 ├── LICENSE              # Open-source MIT License
 ├── manual.py            # Interactive PySide6 Help & User Manual window
 ├── README.md            # Project documentation
@@ -60,6 +61,8 @@ chmod +x install.sh
 ```bash
 systemctl --user status edi-alert-agent.service
 ```
+
+*To remove EDI Agent later, run `./uninstall.sh` — it stops the service, removes the CLI wrapper and venv, and optionally clears your saved node list.*
 
 ---
 
@@ -116,7 +119,7 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 | --- | --- | --- |
 | **Add Node** | `edi-agent add <name> <ip> [--force]` | Validates IP format and reachability immediately, then registers node. Refuses to overwrite an existing node unless `--force` is passed. |
 | **Remove Node** | `edi-agent remove <name>` | Unregisters node from the active registry. |
-| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes and their status. |
+| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their status, and consecutive failure count. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
 | **Run GUI** | `edi-agent gui` | Launches background tray app directly (used by systemd). |
@@ -144,7 +147,7 @@ edi-agent help
 ## Graphical Interface & System Tray
 
 * **System Tray Dock:** Sits by the system clock with custom branding. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
-* **Status Window:** Displays all registered hosts in a clean table with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`).
+* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`) and a consecutive-failure count per node.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
 * **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.
 
