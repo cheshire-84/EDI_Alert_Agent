@@ -14,18 +14,20 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QDialog,
     QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QPushButton, QLabel, QLineEdit
+    QHeaderView, QPushButton, QLabel, QLineEdit, QMessageBox
 )
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
 MANUAL_PATH = BASE_DIR / "manual.py"
 CONFIG_PATH = Path.home() / ".config" / "edi-alert-agent" / "nodes.json"
+HISTORY_PATH = Path.home() / ".config" / "edi-alert-agent" / "history.json"
+MAX_HISTORY_ENTRIES = 200
 
 def load_config():
     if not CONFIG_PATH.exists():
@@ -49,6 +51,38 @@ def save_config(cfg):
             json.dump(cfg, f, indent=2)
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
+
+def load_history():
+    if not HISTORY_PATH.exists():
+        return []
+    try:
+        with open(HISTORY_PATH, "r") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                return json.load(f)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+    except Exception:
+        return []
+
+def save_history(events):
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(HISTORY_PATH, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            json.dump(events, f, indent=2)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+def record_history_event(name, event, message):
+    events = load_history()
+    events.append({
+        "timestamp": time.time(),
+        "node": name,
+        "event": event,
+        "message": message
+    })
+    save_history(events[-MAX_HISTORY_ENTRIES:])
 
 def is_valid_ip(ip):
     try:
@@ -238,6 +272,9 @@ def format_last_checked(timestamp):
 def format_check_method(port):
     return f"TCP:{port}" if port else "ping"
 
+def format_history_timestamp(timestamp):
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else "unknown"
+
 def cli_list():
     cfg = load_config()
     if not cfg["nodes"]:
@@ -262,6 +299,19 @@ def cli_test():
         urgency="critical"
     )
     print("[+] Test notification sent to desktop.")
+
+def cli_history(limit=20):
+    events = load_history()
+    if not events:
+        print("No alert history yet.")
+        return
+    recent = list(reversed(events[-limit:]))
+    print(f"\n{'TIME':<20} {'NODE':<20} {'EVENT':<10} MESSAGE")
+    print("-" * 100)
+    for e in recent:
+        ts = format_history_timestamp(e.get("timestamp"))
+        print(f"{ts:<20} {e.get('node', ''):<20} {e.get('event', '').upper():<10} {e.get('message', '')}")
+    print()
 
 # --- GUI / SYSTEM TRAY ---
 class EditNodeDialog(QDialog):
@@ -329,6 +379,74 @@ class EditNodeDialog(QDialog):
         cli_edit(self.name, ip=ip, port=port, clear_port=clear_port)
         self.accept()
 
+class HistoryDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"EDI Agent (v{__version__}) - Alert History")
+        self.resize(680, 420)
+
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        title_label = QLabel("Alert History")
+        font = QFont()
+        font.setPointSize(14)
+        font.setBold(True)
+        title_label.setFont(font)
+        layout.addWidget(title_label)
+
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Time", "Node", "Event", "Message"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(self.table)
+
+        btn_row = QHBoxLayout()
+        self.clear_btn = QPushButton("Clear History")
+        self.clear_btn.clicked.connect(self.clear_history)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(self.clear_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        self.reload_data()
+
+    def reload_data(self):
+        events = list(reversed(load_history()))
+        self.table.setRowCount(len(events))
+        for row, event in enumerate(events):
+            time_item = QTableWidgetItem(format_history_timestamp(event.get("timestamp")))
+            node_item = QTableWidgetItem(event.get("node", ""))
+            kind_item = QTableWidgetItem(event.get("event", "").upper())
+            message_item = QTableWidgetItem(event.get("message", ""))
+
+            if event.get("event") == "offline":
+                kind_item.setForeground(QColor("#e74c3c"))
+            elif event.get("event") == "online":
+                kind_item.setForeground(QColor("#2ecc71"))
+
+            self.table.setItem(row, 0, time_item)
+            self.table.setItem(row, 1, node_item)
+            self.table.setItem(row, 2, kind_item)
+            self.table.setItem(row, 3, message_item)
+
+    def clear_history(self):
+        reply = QMessageBox.question(
+            self, "Clear History",
+            "Delete all alert history? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            save_history([])
+            self.reload_data()
+
 class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
@@ -388,17 +506,24 @@ class NodeManagerDialog(QDialog):
         self.info_label = QLabel("Auto-checking every 30s • double-click a row to edit")
         self.edit_btn = QPushButton("Edit Selected")
         self.edit_btn.clicked.connect(self.open_edit_dialog_for_selection)
+        self.history_btn = QPushButton("Alert History")
+        self.history_btn.clicked.connect(self.open_history_dialog)
         self.refresh_btn = QPushButton("Refresh / Check Now")
         self.refresh_btn.clicked.connect(self.manual_refresh)
 
         action_layout.addWidget(self.info_label)
         action_layout.addStretch()
         action_layout.addWidget(self.edit_btn)
+        action_layout.addWidget(self.history_btn)
         action_layout.addWidget(self.refresh_btn)
 
         layout.addLayout(action_layout)
 
         self.reload_data()
+
+    def open_history_dialog(self):
+        dialog = HistoryDialog(parent=self)
+        dialog.exec()
 
     def open_edit_dialog_for_selection(self):
         row = self.table.currentRow()
@@ -507,6 +632,9 @@ class MonitorApp:
         self.manage_action = self.menu.addAction("Show Status Window")
         self.manage_action.triggered.connect(self.show_manager)
 
+        self.history_action = self.menu.addAction("Alert History")
+        self.history_action.triggered.connect(self.show_history)
+
         self.help_action = self.menu.addAction("Help / Manual")
         self.help_action.triggered.connect(open_manual_window)
 
@@ -558,23 +686,27 @@ class MonitorApp:
                 info["failures"] = failures
                 if failures >= 2 and prev_status != "offline":
                     info["status"] = "offline"
+                    message = f"ALERT: '{name}' ({ip}) is unreachable!"
                     self.tray.showMessage(
                         "EDI ALERT: Node Offline",
-                        f"ALERT: '{name}' ({ip}) is unreachable!",
+                        message,
                         QSystemTrayIcon.MessageIcon.Critical,
                         10000
                     )
+                    record_history_event(name, "offline", message)
             else:
                 info["failures"] = 0
                 if prev_status != "online":
                     info["status"] = "online"
                     if prev_status == "offline":
+                        message = f"Node '{name}' ({ip}) is back online."
                         self.tray.showMessage(
                             "EDI ALERT: Node Restored",
-                            f"Node '{name}' ({ip}) is back online.",
+                            message,
                             QSystemTrayIcon.MessageIcon.Information,
                             5000
                         )
+                        record_history_event(name, "online", message)
 
         save_config(cfg)
         self.refresh_tray_icon(cfg)
@@ -606,6 +738,10 @@ class MonitorApp:
         self.dialog.raise_()
         self.dialog.activateWindow()
 
+    def show_history(self):
+        dialog = HistoryDialog()
+        dialog.exec()
+
     def run(self):
         sys.exit(self.app.exec())
 
@@ -631,6 +767,8 @@ if __name__ == "__main__":
 
     subparsers.add_parser("list", help="List monitored nodes")
     subparsers.add_parser("test", help="Send a test notification")
+    hist_parser = subparsers.add_parser("history", help="Show recent offline/recovery alert history")
+    hist_parser.add_argument("--limit", type=int, default=20, help="Number of recent events to show (default 20)")
     subparsers.add_parser("help", help="Open manual window")
     subparsers.add_parser("gui", help="Run system tray monitor agent")
 
@@ -646,6 +784,8 @@ if __name__ == "__main__":
         cli_list()
     elif args.command == "test":
         cli_test()
+    elif args.command == "history":
+        cli_history(limit=args.limit)
     elif args.command == "help":
         open_manual_window()
     else:

@@ -53,6 +53,10 @@ MANUAL_HTML = f"""
       <code>edi-agent test</code><br>
       Triggers a test desktop popup via DBus to verify system notifications.</li>
       <br>
+  <li><b>View Alert History:</b><br>
+      <code>edi-agent history [--limit N]</code><br>
+      Shows the most recent offline/recovery events (default 20), newest first.</li>
+      <br>
   <li><b>Open Manual / Help:</b><br>
       <code>edi-agent help</code><br>
       Opens this interactive manual window.</li>
@@ -65,6 +69,7 @@ MANUAL_HTML = f"""
   <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
   <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), the check method (ping or TCP port), failure count, latency, and last-checked time. Click any column header to sort.</li>
   <li><b>Edit Node:</b> Double-click a row (or select it and click <b>Edit Selected</b>) to change its IP or check method without using the terminal. Saving re-validates the node immediately.</li>
+  <li><b>Alert History:</b> Open via the tray menu or the <b>Alert History</b> button in the Status Window to see every past offline/recovery event with a timestamp &mdash; even after the desktop popup is gone. Includes a <b>Clear History</b> option.</li>
   <li><b>Refresh / Check Now:</b> Pings all monitored nodes on demand.</li>
   <li><b>Help Button (<code>?</code>):</b> Click the <code>?</code> button at the top right of the status window to open this manual anytime.</li>
 </ul>

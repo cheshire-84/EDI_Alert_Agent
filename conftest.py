@@ -16,8 +16,10 @@ def qapp():
 
 @pytest.fixture(autouse=True)
 def isolated_config(tmp_path, monkeypatch):
-    """Point CONFIG_PATH at a throwaway file so tests never touch the real
-    ~/.config/edi-alert-agent/nodes.json."""
-    fake_path = tmp_path / "nodes.json"
-    monkeypatch.setattr(edi_agent, "CONFIG_PATH", fake_path)
-    return fake_path
+    """Point CONFIG_PATH and HISTORY_PATH at throwaway files so tests never
+    touch the real ~/.config/edi-alert-agent/ files."""
+    fake_config = tmp_path / "nodes.json"
+    fake_history = tmp_path / "history.json"
+    monkeypatch.setattr(edi_agent, "CONFIG_PATH", fake_config)
+    monkeypatch.setattr(edi_agent, "HISTORY_PATH", fake_history)
+    return fake_config

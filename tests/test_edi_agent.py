@@ -266,3 +266,116 @@ def test_edit_dialog_blank_port_clears_existing_port(qapp, monkeypatch):
     dialog.on_save()
 
     assert edi_agent.load_config()["nodes"]["db"]["port"] is None
+
+
+# --- Alert history ---
+
+def test_load_history_empty_when_missing():
+    assert edi_agent.load_history() == []
+
+def test_record_history_event_appends():
+    edi_agent.record_history_event("web", "offline", "web is down")
+    events = edi_agent.load_history()
+    assert len(events) == 1
+    assert events[0]["node"] == "web"
+    assert events[0]["event"] == "offline"
+    assert events[0]["message"] == "web is down"
+    assert events[0]["timestamp"] > 0
+
+def test_record_history_event_trims_to_max_entries(monkeypatch):
+    monkeypatch.setattr(edi_agent, "MAX_HISTORY_ENTRIES", 5)
+    for i in range(8):
+        edi_agent.record_history_event(f"node{i}", "offline", f"event {i}")
+    events = edi_agent.load_history()
+    assert len(events) == 5
+    # Oldest events should have been dropped, newest kept
+    assert events[-1]["node"] == "node7"
+    assert events[0]["node"] == "node3"
+
+def test_format_history_timestamp_none():
+    assert edi_agent.format_history_timestamp(None) == "unknown"
+
+def test_format_history_timestamp_formats():
+    result = edi_agent.format_history_timestamp(time.time())
+    assert len(result) == 19  # "YYYY-MM-DD HH:MM:SS"
+
+def test_cli_history_empty(capsys):
+    edi_agent.cli_history()
+    assert "No alert history yet" in capsys.readouterr().out
+
+def test_cli_history_shows_recent_events_newest_first(capsys):
+    edi_agent.record_history_event("web", "offline", "web is down")
+    edi_agent.record_history_event("web", "online", "web is back")
+    capsys.readouterr()
+
+    edi_agent.cli_history()
+    out = capsys.readouterr().out
+    offline_pos = out.find("OFFLINE")
+    online_pos = out.find("ONLINE")
+    assert offline_pos != -1 and online_pos != -1
+    assert online_pos < offline_pos  # newest (online) listed first
+
+def test_cli_history_respects_limit(capsys):
+    for i in range(5):
+        edi_agent.record_history_event(f"node{i}", "offline", f"event {i}")
+    capsys.readouterr()
+
+    edi_agent.cli_history(limit=2)
+    out = capsys.readouterr().out
+    assert "node4" in out and "node3" in out
+    assert "node0" not in out
+
+def test_check_nodes_records_history_on_offline_and_recovery(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    app = edi_agent.MonitorApp.__new__(edi_agent.MonitorApp)
+    app.dialog = None
+    from edi_agent import load_base_tray_pixmap, build_badged_icon
+    from PySide6.QtGui import QIcon, QColor
+    from PySide6.QtWidgets import QSystemTrayIcon
+    base = load_base_tray_pixmap()
+    app.icon_neutral = QIcon(base)
+    app.icon_online = build_badged_icon(base, QColor("#2ecc71"))
+    app.icon_offline = build_badged_icon(base, QColor("#e74c3c"))
+    app.tray = QSystemTrayIcon()
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
+    app.check_nodes()
+    app.check_nodes()  # second consecutive failure trips the 2-strike threshold
+
+    events = edi_agent.load_history()
+    assert len(events) == 1
+    assert events[0]["event"] == "offline"
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    app.check_nodes()
+
+    events = edi_agent.load_history()
+    assert len(events) == 2
+    assert events[1]["event"] == "online"
+
+
+# --- HistoryDialog (GUI) ---
+
+def test_history_dialog_shows_events(qapp):
+    edi_agent.record_history_event("web", "offline", "web is down")
+    edi_agent.record_history_event("web", "online", "web is back")
+
+    dialog = edi_agent.HistoryDialog()
+    assert dialog.table.rowCount() == 2
+    assert dialog.table.item(0, 1).text() == "web"
+
+def test_history_dialog_clear_history(qapp, monkeypatch):
+    edi_agent.record_history_event("web", "offline", "web is down")
+    dialog = edi_agent.HistoryDialog()
+    assert dialog.table.rowCount() == 1
+
+    monkeypatch.setattr(edi_agent.QMessageBox, "question", lambda *a, **k: edi_agent.QMessageBox.Yes)
+    dialog.clear_history()
+
+    assert dialog.table.rowCount() == 0
+    assert edi_agent.load_history() == []

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.3.0)</h1>
+  <h1>EDI Agent (v1.4.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -127,6 +127,7 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 | **Edit Node** | `edi-agent edit <name> [--ip IP] [--port PORT] [--clear-port]` | Updates a node's IP and/or port check in place and re-validates it immediately. `--clear-port` reverts the node back to ICMP ping. |
 | **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their check method (ping or TCP port), status, failure count, latency, and when they were last checked. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
+| **Alert History** | `edi-agent history [--limit N]` | Shows the most recent offline/recovery events (default 20), newest first. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
 | **Run GUI** | `edi-agent gui` | Launches background tray app directly (used by systemd). |
 
@@ -154,6 +155,9 @@ edi-agent list
 # Send a test desktop notification
 edi-agent test
 
+# See the last 20 offline/recovery events
+edi-agent history
+
 # Open built-in interactive manual
 edi-agent help
 ```
@@ -165,6 +169,7 @@ edi-agent help
 * **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
 * **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), the check method (ping or TCP port), consecutive-failure count, latency, and last-checked time per node.
 * **Edit Node:** Double-click any row (or select it and click **Edit Selected**) to change a node's IP or check method without dropping to the terminal. Re-validates the node as soon as you save.
+* **Alert History:** A dedicated window (via the tray menu or the **Alert History** button in the Status Window) listing every offline/recovery event with a timestamp, so you can see what happened even after the desktop popup is gone. Includes a **Clear History** option.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
 * **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.
 
@@ -208,6 +213,8 @@ Example configuration:
 > **Note:** `last_checked` is a Unix timestamp; `latency_ms` is `null` while a node is offline.
 
 > **Note:** The background service watches this file continuously. Adding or removing nodes via the CLI immediately updates the background daemon without requiring a service restart.
+
+Offline/recovery alert history is stored separately at `~/.config/edi-alert-agent/history.json`, capped at the 200 most recent events.
 
 ---
 

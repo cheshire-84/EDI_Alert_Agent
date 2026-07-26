@@ -17,6 +17,7 @@ __pycache__/
 
 # Local Node Configuration (Keep your actual IP addresses private)
 nodes.json
+history.json
 
 # Logs
 *.log
