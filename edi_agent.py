@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-# EDI Agent (v1.0.0) - System Tray Node Monitor & Alert Agent
+# EDI Agent - System Tray Node Monitor & Alert Agent
 import sys
 import json
+import fcntl
+import ipaddress
 import subprocess
 import argparse
+import concurrent.futures
 from pathlib import Path
 from PySide6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QDialog,
@@ -12,6 +15,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont
+
+__version__ = "1.0.1"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -25,14 +30,47 @@ def load_config():
         return {"nodes": {}}
     try:
         with open(CONFIG_PATH, "r") as f:
-            return json.load(f)
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                return json.load(f)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
     except Exception:
         return {"nodes": {}}
 
 def save_config(cfg):
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            json.dump(cfg, f, indent=2)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+def is_valid_ip(ip):
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
+
+def ping_nodes_concurrently(nodes):
+    """Ping all nodes in parallel so a 30-node fleet doesn't take 30 seconds to check."""
+    results = {}
+    if not nodes:
+        return results
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(nodes))) as executor:
+        future_to_name = {
+            executor.submit(ping_node, info["ip"]): name
+            for name, info in nodes.items()
+        }
+        for future in concurrent.futures.as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                results[name] = future.result()
+            except Exception:
+                results[name] = False
+    return results
 
 def ping_node(ip):
     # Single ICMP ping with 1-second timeout on Linux
@@ -58,19 +96,28 @@ def open_manual_window():
         subprocess.Popen([sys.executable, str(MANUAL_PATH)])
 
 # --- CLI COMMANDS ---
-def cli_add(name, ip):
+def cli_add(name, ip, force=False):
+    if not is_valid_ip(ip):
+        print(f"[!] '{ip}' is not a valid IP address.")
+        return
+
+    cfg = load_config()
+    if name in cfg["nodes"] and not force:
+        print(f"[!] Node '{name}' already exists ({cfg['nodes'][name]['ip']}). "
+              f"Use --force to overwrite, or 'edi-agent remove {name}' first.")
+        return
+
     print(f"[?] Checking reachability for '{name}' ({ip})...", end=" ", flush=True)
     is_online = ping_node(ip)
     status = "online" if is_online else "offline"
-    
-    cfg = load_config()
+
     cfg["nodes"][name] = {
         "ip": ip,
         "status": status,
         "failures": 0 if is_online else 1
     }
     save_config(cfg)
-    
+
     status_str = "ONLINE" if is_online else "OFFLINE"
     print(f"Done!\n[+] Added node: {name} ({ip}) -> Status: {status_str}")
 
@@ -97,7 +144,7 @@ def cli_list():
 def cli_test():
     print("[*] Triggering test notification...")
     send_desktop_notification(
-        "EDI Agent (v1.0.0): Test",
+        f"EDI Agent (v{__version__}): Test",
         "This is a test notification from EDI Agent! Desktop alerts are working.",
         urgency="critical"
     )
@@ -108,7 +155,7 @@ class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
         self.monitor_app = monitor_app
-        self.setWindowTitle("EDI Agent (v1.0.0) - Monitored Nodes")
+        self.setWindowTitle(f"EDI Agent (v{__version__}) - Monitored Nodes")
         self.resize(580, 400)
         
         if LOGO_PATH.exists():
@@ -128,7 +175,7 @@ class NodeManagerDialog(QDialog):
             logo_label.setPixmap(pixmap)
             header_layout.addWidget(logo_label)
         
-        title_label = QLabel("EDI Agent (v1.0.0)")
+        title_label = QLabel(f"EDI Agent (v{__version__})")
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
@@ -176,9 +223,9 @@ class NodeManagerDialog(QDialog):
             self.monitor_app.check_nodes()
         else:
             cfg = load_config()
+            results = ping_nodes_concurrently(cfg["nodes"])
             for name, info in cfg["nodes"].items():
-                is_online = ping_node(info["ip"])
-                info["status"] = "online" if is_online else "offline"
+                info["status"] = "online" if results.get(name, False) else "offline"
             save_config(cfg)
             
         self.reload_data()
@@ -224,7 +271,7 @@ class MonitorApp:
 
         # Context Menu
         self.menu = QMenu()
-        self.status_action = self.menu.addAction("EDI Agent (v1.0.0): Active")
+        self.status_action = self.menu.addAction(f"EDI Agent (v{__version__}): Active")
         self.status_action.setEnabled(False)
         self.menu.addSeparator()
 
@@ -254,7 +301,7 @@ class MonitorApp:
 
     def trigger_test_alert(self):
         self.tray.showMessage(
-            "EDI Agent (v1.0.0): Test",
+            f"EDI Agent (v{__version__}): Test",
             "This is a test notification from EDI Agent!",
             QSystemTrayIcon.MessageIcon.Information,
             5000
@@ -264,9 +311,10 @@ class MonitorApp:
         cfg = load_config()
         updated = False
 
+        results = ping_nodes_concurrently(cfg["nodes"])
         for name, info in cfg["nodes"].items():
             ip = info["ip"]
-            is_online = ping_node(ip)
+            is_online = results.get(name, False)
             prev_status = info.get("status", "unknown")
             failures = info.get("failures", 0)
 
@@ -314,12 +362,13 @@ class MonitorApp:
         sys.exit(self.app.exec())
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="EDI Agent (v1.0.0)")
+    parser = argparse.ArgumentParser(description=f"EDI Agent (v{__version__})")
     subparsers = parser.add_subparsers(dest="command")
 
     add_parser = subparsers.add_parser("add", help="Add a node to monitor")
     add_parser.add_argument("name", help="Node identifier (e.g. plex)")
     add_parser.add_argument("ip", help="IP address (e.g. 10.1.1.99)")
+    add_parser.add_argument("--force", action="store_true", help="Overwrite an existing node with the same name")
 
     rem_parser = subparsers.add_parser("remove", help="Remove a monitored node")
     rem_parser.add_argument("name", help="Node identifier")
@@ -332,7 +381,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.command == "add":
-        cli_add(args.name, args.ip)
+        cli_add(args.name, args.ip, force=args.force)
     elif args.command == "remove":
         cli_remove(args.name)
     elif args.command == "list":

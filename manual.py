@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# EDI Agent (v1.0.0) - System Tray Node Monitor & Alert Agent
+# EDI Agent - System Tray Node Monitor & Alert Agent
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -9,12 +9,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap, QFont
 
+from edi_agent import __version__
+
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
 
-MANUAL_HTML = """
-<h2>EDI Agent (v1.0.0) - User Manual & Command Reference</h2>
+MANUAL_HTML = f"""
+<h2>EDI Agent (v{__version__}) - User Manual & Command Reference</h2>
 
 <p><b>EDI Agent</b> is a background LAN node monitoring daemon and desktop tray application.</p>
 
@@ -27,7 +29,8 @@ MANUAL_HTML = """
   <li><b>Add a Monitored Node:</b><br>
       <code>edi-agent add &lt;name&gt; &lt;ip&gt;</code><br>
       <i>Example:</i> <code>edi-agent add plex 10.1.1.99</code><br>
-      <i>Note:</i> Performs an immediate reachability check upon adding.</li>
+      <i>Note:</i> Performs an immediate reachability check upon adding. Rejects invalid IP addresses,
+      and refuses to overwrite an existing node unless you add <code>--force</code>.</li>
       <br>
   <li><b>Remove a Monitored Node:</b><br>
       <code>edi-agent remove &lt;name&gt;</code><br>
@@ -67,7 +70,7 @@ MANUAL_HTML = """
 class ManualDialog(QDialog):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EDI Agent (v1.0.0) - Help & Manual")
+        self.setWindowTitle(f"EDI Agent (v{__version__}) - Help & Manual")
         self.resize(600, 520)
 
         if LOGO_PATH.exists():
@@ -84,7 +87,7 @@ class ManualDialog(QDialog):
             logo_label.setPixmap(pixmap)
             header_layout.addWidget(logo_label)
 
-        title = QLabel("EDI Agent (v1.0.0) Help")
+        title = QLabel(f"EDI Agent (v{__version__}) Help")
         font = QFont()
         font.setPointSize(14)
         font.setBold(True)

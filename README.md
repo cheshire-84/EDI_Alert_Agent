@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.0.0)</h1>
+  <h1>EDI Agent (v1.0.1)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -114,7 +114,7 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 
 | Command | Usage | Description |
 | --- | --- | --- |
-| **Add Node** | `edi-agent add <name> <ip>` | Validates reachability immediately and registers node. |
+| **Add Node** | `edi-agent add <name> <ip> [--force]` | Validates IP format and reachability immediately, then registers node. Refuses to overwrite an existing node unless `--force` is passed. |
 | **Remove Node** | `edi-agent remove <name>` | Unregisters node from the active registry. |
 | **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes and their status. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
