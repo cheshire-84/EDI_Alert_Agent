@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.0.2)</h1>
+  <h1>EDI Agent (v1.0.3)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -12,7 +12,7 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 
 ## Key Features
 
-* **Native KDE Plasma System Tray:** Integrates seamlessly near the desktop clock using PySide6 (Qt6) with custom branding.
+* **Native KDE Plasma System Tray:** Integrates seamlessly near the desktop clock using PySide6 (Qt6) with custom branding, and a live green/red health badge on the icon itself.
 * **Non-Intrusive Ping Strategy:** Asynchronous ICMP checks every 30 seconds with 1-second strict timeouts to prevent network bottlenecks.
 * **3-Strike Failure Protection:** Requires 2 consecutive failed pings before triggering a critical desktop popup to prevent false alarms over Wi-Fi.
 * **Unified CLI & GUI:** Full control from any terminal (`edi-agent`) alongside a tray-docked GUI featuring real-time refresh capability.
@@ -146,7 +146,7 @@ edi-agent help
 
 ## Graphical Interface & System Tray
 
-* **System Tray Dock:** Sits by the system clock with custom branding. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
+* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
 * **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`) and a consecutive-failure count per node.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
 * **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.

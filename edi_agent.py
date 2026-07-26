@@ -14,9 +14,9 @@ from PySide6.QtWidgets import (
     QHeaderView, QPushButton, QLabel
 )
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QIcon, QColor, QPixmap, QFont
+from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
@@ -94,6 +94,32 @@ def send_desktop_notification(title, message, urgency="normal"):
 def open_manual_window():
     if MANUAL_PATH.exists():
         subprocess.Popen([sys.executable, str(MANUAL_PATH)])
+
+def load_base_tray_pixmap():
+    if LOGO_PATH.exists():
+        base = QPixmap(str(LOGO_PATH))
+    else:
+        base = QIcon.fromTheme("network-server", QIcon.fromTheme("utilities-system-monitor")).pixmap(64, 64)
+    return base.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+def build_badged_icon(base_pixmap, badge_color):
+    """Overlay a colored health-status dot on the tray icon's corner."""
+    pixmap = QPixmap(base_pixmap.size())
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.drawPixmap(0, 0, base_pixmap)
+
+    diameter = int(pixmap.width() * 0.4)
+    x = pixmap.width() - diameter
+    y = pixmap.height() - diameter
+    painter.setPen(QPen(QColor("white"), 2))
+    painter.setBrush(QBrush(badge_color))
+    painter.drawEllipse(x, y, diameter, diameter)
+    painter.end()
+
+    return QIcon(pixmap)
 
 # --- CLI COMMANDS ---
 def cli_add(name, ip, force=False):
@@ -272,13 +298,14 @@ class MonitorApp:
         self.app.setQuitOnLastWindowClosed(False)
 
         # Tray Icon
+        base_pixmap = load_base_tray_pixmap()
+        self.icon_neutral = QIcon(base_pixmap)
+        self.icon_online = build_badged_icon(base_pixmap, QColor("#2ecc71"))
+        self.icon_offline = build_badged_icon(base_pixmap, QColor("#e74c3c"))
+
         self.tray = QSystemTrayIcon()
-        if LOGO_PATH.exists():
-            icon = QIcon(str(LOGO_PATH))
-        else:
-            icon = QIcon.fromTheme("network-server", QIcon.fromTheme("utilities-system-monitor"))
-        
-        self.tray.setIcon(icon)
+        self.tray.setIcon(self.icon_neutral)
+        self.tray.setToolTip(f"EDI Agent (v{__version__})")
         self.tray.setVisible(True)
 
         # Context Menu
@@ -357,9 +384,26 @@ class MonitorApp:
 
         if updated:
             save_config(cfg)
-            
+
+        self.refresh_tray_icon(cfg)
+
         if self.dialog and self.dialog.isVisible():
             self.dialog.reload_data()
+
+    def refresh_tray_icon(self, cfg):
+        nodes = cfg.get("nodes", {})
+        if not nodes:
+            self.tray.setIcon(self.icon_neutral)
+            self.tray.setToolTip(f"EDI Agent (v{__version__}): No nodes monitored")
+            return
+
+        down = [name for name, info in nodes.items() if info.get("status") == "offline"]
+        if down:
+            self.tray.setIcon(self.icon_offline)
+            self.tray.setToolTip(f"EDI Agent (v{__version__}): {len(down)} node(s) offline")
+        else:
+            self.tray.setIcon(self.icon_online)
+            self.tray.setToolTip(f"EDI Agent (v{__version__}): All nodes online")
 
     def show_manager(self):
         if not self.dialog:
