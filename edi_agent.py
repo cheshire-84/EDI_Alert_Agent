@@ -10,8 +10,12 @@ from PySide6.QtWidgets import (
     QHeaderView, QPushButton, QLabel
 )
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QIcon, QColor
+from PySide6.QtGui import QIcon, QColor, QPixmap, QFont
 
+BASE_DIR = Path(__file__).parent.resolve()
+ASSETS_DIR = BASE_DIR / "assets"
+LOGO_PATH = ASSETS_DIR / "app_logo.png"
+MANUAL_PATH = BASE_DIR / "manual.py"
 CONFIG_PATH = Path.home() / ".config" / "edi-alert-agent" / "nodes.json"
 
 def load_config():
@@ -39,14 +43,18 @@ def ping_node(ip):
     return res.returncode == 0
 
 def send_desktop_notification(title, message, urgency="normal"):
-    # Native Linux notification via notify-send over DBus
     try:
+        icon_arg = str(LOGO_PATH) if LOGO_PATH.exists() else "network-server"
         subprocess.run(
-            ["notify-send", "-u", urgency, "-i", "network-server", title, message],
+            ["notify-send", "-u", urgency, "-i", icon_arg, title, message],
             check=True
         )
     except Exception:
         pass
+
+def open_manual_window():
+    if MANUAL_PATH.exists():
+        subprocess.Popen([sys.executable, str(MANUAL_PATH)])
 
 # --- CLI COMMANDS ---
 def cli_add(name, ip):
@@ -88,8 +96,8 @@ def cli_list():
 def cli_test():
     print("[*] Triggering test notification...")
     send_desktop_notification(
-        "EDI Alert Agent: Test",
-        "This is a test notification from EDI Alert Agent! Desktop alerts are working.",
+        "EDI Agent (v1): Test",
+        "This is a test notification from EDI Agent! Desktop alerts are working.",
         urgency="critical"
     )
     print("[+] Test notification sent to desktop.")
@@ -99,19 +107,52 @@ class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
         self.monitor_app = monitor_app
-        self.setWindowTitle("EDI Alert Agent - Monitored Nodes")
-        self.resize(550, 360)
+        self.setWindowTitle("EDI Agent (v1) - Monitored Nodes")
+        self.resize(580, 400)
         
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(12)
         
-        # Table
+        # --- HEADER SECTION ---
+        header_layout = QHBoxLayout()
+        header_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        if LOGO_PATH.exists():
+            logo_label = QLabel()
+            pixmap = QPixmap(str(LOGO_PATH)).scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
+            header_layout.addWidget(logo_label)
+        
+        title_label = QLabel("EDI Agent (v1)")
+        font = QFont()
+        font.setPointSize(16)
+        font.setBold(True)
+        title_label.setFont(font)
+        header_layout.addWidget(title_label)
+        
+        header_layout.addStretch()
+        
+        # '?' Help Button
+        self.help_btn = QPushButton("?")
+        self.help_btn.setFixedWidth(28)
+        self.help_btn.setToolTip("Open User Manual & Help")
+        self.help_btn.clicked.connect(open_manual_window)
+        header_layout.addWidget(self.help_btn)
+        
+        layout.addLayout(header_layout)
+        
+        # --- TABLE SECTION ---
         self.table = QTableWidget()
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(["Node Name", "IP Address", "Status"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.table)
         
-        # Action Bar (Refresh Button & Info)
+        # --- ACTION BAR SECTION ---
         action_layout = QHBoxLayout()
         self.info_label = QLabel("Auto-checking every 30s")
         self.refresh_btn = QPushButton("Refresh / Check Now")
@@ -133,7 +174,6 @@ class NodeManagerDialog(QDialog):
         if self.monitor_app:
             self.monitor_app.check_nodes()
         else:
-            # Fallback inline ping check
             cfg = load_config()
             for name, info in cfg["nodes"].items():
                 is_online = ping_node(info["ip"])
@@ -154,7 +194,6 @@ class NodeManagerDialog(QDialog):
             item_ip = QTableWidgetItem(info["ip"])
             item_status = QTableWidgetItem(status)
             
-            # Text alignment and color highlight
             item_status.setTextAlignment(Qt.AlignCenter)
             if status == "ONLINE":
                 item_status.setForeground(QColor("#2ecc71"))
@@ -174,18 +213,25 @@ class MonitorApp:
 
         # Tray Icon
         self.tray = QSystemTrayIcon()
-        icon = QIcon.fromTheme("network-server", QIcon.fromTheme("utilities-system-monitor"))
+        if LOGO_PATH.exists():
+            icon = QIcon(str(LOGO_PATH))
+        else:
+            icon = QIcon.fromTheme("network-server", QIcon.fromTheme("utilities-system-monitor"))
+        
         self.tray.setIcon(icon)
         self.tray.setVisible(True)
 
         # Context Menu
         self.menu = QMenu()
-        self.status_action = self.menu.addAction("EDI Alert Agent: Active")
+        self.status_action = self.menu.addAction("EDI Agent (v1): Active")
         self.status_action.setEnabled(False)
         self.menu.addSeparator()
 
         self.manage_action = self.menu.addAction("Show Status Window")
         self.manage_action.triggered.connect(self.show_manager)
+
+        self.help_action = self.menu.addAction("Help / Manual")
+        self.help_action.triggered.connect(open_manual_window)
 
         self.test_action = self.menu.addAction("Send Test Alert")
         self.test_action.triggered.connect(self.trigger_test_alert)
@@ -207,8 +253,8 @@ class MonitorApp:
 
     def trigger_test_alert(self):
         self.tray.showMessage(
-            "EDI Alert Agent: Test",
-            "This is a test notification from EDI Alert Agent!",
+            "EDI Agent (v1): Test",
+            "This is a test notification from EDI Agent!",
             QSystemTrayIcon.MessageIcon.Information,
             5000
         )
@@ -267,7 +313,7 @@ class MonitorApp:
         sys.exit(self.app.exec())
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="EDI Alert Agent")
+    parser = argparse.ArgumentParser(description="EDI Agent (v1)")
     subparsers = parser.add_subparsers(dest="command")
 
     add_parser = subparsers.add_parser("add", help="Add a node to monitor")
@@ -279,6 +325,7 @@ if __name__ == "__main__":
 
     subparsers.add_parser("list", help="List monitored nodes")
     subparsers.add_parser("test", help="Send a test notification")
+    subparsers.add_parser("help", help="Open manual window")
     subparsers.add_parser("gui", help="Run system tray monitor agent")
 
     args = parser.parse_args()
@@ -291,6 +338,8 @@ if __name__ == "__main__":
         cli_list()
     elif args.command == "test":
         cli_test()
+    elif args.command == "help":
+        open_manual_window()
     else:
         app = MonitorApp()
         app.run()
