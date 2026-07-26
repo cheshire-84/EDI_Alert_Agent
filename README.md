@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.4.0)</h1>
+  <h1>EDI Agent (v1.5.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -13,9 +13,10 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 ## Key Features
 
 * **Native KDE Plasma System Tray:** Integrates seamlessly near the desktop clock using PySide6 (Qt6) with custom branding, and a live green/red health badge on the icon itself.
-* **Non-Intrusive Ping Strategy:** Concurrent ICMP checks every 30 seconds with 1-second strict timeouts to prevent network bottlenecks.
+* **Non-Intrusive Ping Strategy:** Concurrent ICMP checks every 30 seconds (the daemon's tick rate) with 1-second strict timeouts to prevent network bottlenecks.
+* **Per-Node Check Interval & Alert Threshold:** Override the default 30s check interval or 2-strike alert threshold on any individual node — e.g. check a flaky IoT device every 5 minutes, or alert instantly on a critical database.
 * **Optional Service-Level Port Checks:** Monitor a specific TCP port instead of ICMP (e.g. `5432` for PostgreSQL, `32400` for Plex, `8006` for Proxmox) to confirm the actual service is up, not just the host.
-* **3-Strike Failure Protection:** Requires 2 consecutive failed pings before triggering a critical desktop popup to prevent false alarms over Wi-Fi.
+* **Configurable Failure Threshold:** Requires 2 consecutive failed checks (by default) before triggering a critical desktop popup, to prevent false alarms over Wi-Fi. Adjustable per node.
 * **Unified CLI & GUI:** Full control from any terminal (`edi-agent`) alongside a tray-docked GUI featuring real-time refresh capability.
 * **Instant Reachability Validation:** Automatically tests host reachability immediately when adding new nodes via the CLI.
 * **Built-In Interactive Manual:** Includes a standalone documentation GUI (`manual.py`) accessible via terminal command (`edi-agent help`) or the header **`?`** button in the UI.
@@ -122,10 +123,10 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 
 | Command | Usage | Description |
 | --- | --- | --- |
-| **Add Node** | `edi-agent add <name> <ip> [--port PORT] [--force]` | Validates IP format and reachability immediately, then registers node. With `--port`, checks that TCP port instead of ICMP ping — useful for confirming a specific service (Plex, PostgreSQL, Proxmox, etc.) is actually running. Refuses to overwrite an existing node unless `--force` is passed. |
+| **Add Node** | `edi-agent add <name> <ip> [--port PORT] [--interval SEC] [--threshold N] [--force]` | Validates IP format and reachability immediately, then registers node. `--port` checks a TCP port instead of ICMP ping. `--interval` sets how often this node is checked (default 30s, minimum 5s). `--threshold` sets how many consecutive failures trigger an alert (default 2). Refuses to overwrite an existing node unless `--force` is passed. |
 | **Remove Node** | `edi-agent remove <name>` | Unregisters node from the active registry. |
-| **Edit Node** | `edi-agent edit <name> [--ip IP] [--port PORT] [--clear-port]` | Updates a node's IP and/or port check in place and re-validates it immediately. `--clear-port` reverts the node back to ICMP ping. |
-| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their check method (ping or TCP port), status, failure count, latency, and when they were last checked. |
+| **Edit Node** | `edi-agent edit <name> [--ip IP] [--port PORT] [--clear-port] [--interval SEC] [--threshold N]` | Updates a node's IP, port check, interval, and/or threshold in place and re-validates it immediately. `--clear-port` reverts the node back to ICMP ping. |
+| **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their check method (ping or TCP port), status, failures/threshold, check interval, latency, and when they were last checked. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
 | **Alert History** | `edi-agent history [--limit N]` | Shows the most recent offline/recovery events (default 20), newest first. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
@@ -144,10 +145,16 @@ edi-agent add plex 10.1.1.99 --port 32400       # Plex Media Server
 edi-agent add edi-database 10.1.1.20 --port 5432  # PostgreSQL
 edi-agent add pve-server 10.1.1.3 --port 8006   # Proxmox VE web UI
 
+# Add nodes with a custom check interval or alert threshold
+edi-agent add iot-sensor 10.1.1.200 --interval 300   # only check every 5 minutes
+edi-agent add edi-database 10.1.1.20 --port 5432 --threshold 1  # alert on the first failure
+
 # Edit a node in place (no need to remove + re-add)
 edi-agent edit plex --ip 10.1.1.150       # host got a new IP
 edi-agent edit gateway --port 22          # switch to a TCP port check
 edi-agent edit gateway --clear-port       # revert back to ICMP ping
+edi-agent edit iot-sensor --interval 600  # check even less often
+edi-agent edit edi-database --threshold 3 # require 3 failures before alerting
 
 # List monitored hosts
 edi-agent list
@@ -167,7 +174,7 @@ edi-agent help
 ## Graphical Interface & System Tray
 
 * **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
-* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), the check method (ping or TCP port), consecutive-failure count, latency, and last-checked time per node.
+* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), the check method (ping or TCP port), failures/threshold, check interval, latency, and last-checked time per node.
 * **Edit Node:** Double-click any row (or select it and click **Edit Selected**) to change a node's IP or check method without dropping to the terminal. Re-validates the node as soon as you save.
 * **Alert History:** A dedicated window (via the tray menu or the **Alert History** button in the Status Window) listing every offline/recovery event with a timestamp, so you can see what happened even after the desktop popup is gone. Includes a **Clear History** option.
 * **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
@@ -191,6 +198,8 @@ Example configuration:
     "gateway": {
       "ip": "10.1.1.1",
       "port": null,
+      "check_interval": 30,
+      "failure_threshold": 2,
       "status": "online",
       "failures": 0,
       "last_checked": 1753500000.0,
@@ -199,6 +208,8 @@ Example configuration:
     "plex": {
       "ip": "10.1.1.99",
       "port": 32400,
+      "check_interval": 30,
+      "failure_threshold": 2,
       "status": "online",
       "failures": 0,
       "last_checked": 1753500000.0,
@@ -208,7 +219,7 @@ Example configuration:
 }
 ```
 
-> **Note:** `port` is `null` for nodes checked via ICMP ping, or a TCP port number for nodes checked via a service-level port test.
+> **Note:** `port` is `null` for nodes checked via ICMP ping, or a TCP port number for nodes checked via a service-level port test. `check_interval` (seconds) and `failure_threshold` (consecutive failures) default to 30 and 2 but can be overridden per node.
 
 > **Note:** `last_checked` is a Unix timestamp; `latency_ms` is `null` while a node is offline.
 

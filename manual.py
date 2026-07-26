@@ -27,27 +27,31 @@ MANUAL_HTML = f"""
 
 <ul>
   <li><b>Add a Monitored Node:</b><br>
-      <code>edi-agent add &lt;name&gt; &lt;ip&gt; [--port PORT]</code><br>
+      <code>edi-agent add &lt;name&gt; &lt;ip&gt; [--port PORT] [--interval SEC] [--threshold N]</code><br>
       <i>Example:</i> <code>edi-agent add plex 10.1.1.99 --port 32400</code><br>
       <i>Note:</i> Performs an immediate reachability check upon adding. Rejects invalid IP addresses,
       and refuses to overwrite an existing node unless you add <code>--force</code>. Add
       <code>--port</code> to check a specific TCP service (e.g. <code>5432</code> for PostgreSQL,
       <code>32400</code> for Plex, <code>8006</code> for Proxmox) instead of a plain ICMP ping &mdash;
-      this confirms the service itself is running, not just that the host is reachable.</li>
+      this confirms the service itself is running, not just that the host is reachable. Use
+      <code>--interval</code> to check this node on its own schedule (seconds, default 30, minimum 5)
+      and <code>--threshold</code> to control how many consecutive failures trigger an alert (default 2).</li>
       <br>
   <li><b>Remove a Monitored Node:</b><br>
       <code>edi-agent remove &lt;name&gt;</code><br>
       <i>Example:</i> <code>edi-agent remove plex</code></li>
       <br>
   <li><b>Edit a Monitored Node:</b><br>
-      <code>edi-agent edit &lt;name&gt; [--ip IP] [--port PORT] [--clear-port]</code><br>
+      <code>edi-agent edit &lt;name&gt; [--ip IP] [--port PORT] [--clear-port] [--interval SEC] [--threshold N]</code><br>
       <i>Example:</i> <code>edi-agent edit gateway --port 22</code><br>
-      Updates a node's IP and/or check method in place and re-validates it immediately &mdash;
-      no need to remove and re-add. <code>--clear-port</code> reverts a node back to ICMP ping.</li>
+      Updates a node's IP, check method, interval, and/or alert threshold in place and re-validates
+      it immediately &mdash; no need to remove and re-add. <code>--clear-port</code> reverts a node
+      back to ICMP ping.</li>
       <br>
   <li><b>List All Monitored Nodes:</b><br>
       <code>edi-agent list</code><br>
-      Outputs a table of registered nodes, their check method (ping or TCP port), last known status, consecutive failure count, latency, and last-checked time.</li>
+      Outputs a table of registered nodes, their check method (ping or TCP port), last known status,
+      failures/threshold, check interval, latency, and last-checked time.</li>
       <br>
   <li><b>Test Desktop Notifications:</b><br>
       <code>edi-agent test</code><br>
@@ -67,7 +71,7 @@ MANUAL_HTML = f"""
 <h3>Desktop UI & System Tray Features</h3>
 <ul>
   <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
-  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), the check method (ping or TCP port), failure count, latency, and last-checked time. Click any column header to sort.</li>
+  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), the check method (ping or TCP port), failures/threshold, check interval, latency, and last-checked time. Click any column header to sort.</li>
   <li><b>Edit Node:</b> Double-click a row (or select it and click <b>Edit Selected</b>) to change its IP or check method without using the terminal. Saving re-validates the node immediately.</li>
   <li><b>Alert History:</b> Open via the tray menu or the <b>Alert History</b> button in the Status Window to see every past offline/recovery event with a timestamp &mdash; even after the desktop popup is gone. Includes a <b>Clear History</b> option.</li>
   <li><b>Refresh / Check Now:</b> Pings all monitored nodes on demand.</li>

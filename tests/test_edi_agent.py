@@ -344,15 +344,15 @@ def test_check_nodes_records_history_on_offline_and_recovery(monkeypatch):
     app.tray = QSystemTrayIcon()
 
     monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
-    app.check_nodes()
-    app.check_nodes()  # second consecutive failure trips the 2-strike threshold
+    app.check_nodes(force=True)
+    app.check_nodes(force=True)  # second consecutive failure trips the 2-strike threshold
 
     events = edi_agent.load_history()
     assert len(events) == 1
     assert events[0]["event"] == "offline"
 
     monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
-    app.check_nodes()
+    app.check_nodes(force=True)
 
     events = edi_agent.load_history()
     assert len(events) == 2
@@ -379,3 +379,151 @@ def test_history_dialog_clear_history(qapp, monkeypatch):
 
     assert dialog.table.rowCount() == 0
     assert edi_agent.load_history() == []
+
+
+# --- Per-node interval / threshold ---
+
+def test_is_valid_interval():
+    assert edi_agent.is_valid_interval(5) is True
+    assert edi_agent.is_valid_interval(30) is True
+    assert edi_agent.is_valid_interval(4) is False
+
+def test_is_valid_threshold():
+    assert edi_agent.is_valid_threshold(1) is True
+    assert edi_agent.is_valid_threshold(0) is False
+
+def test_format_failures():
+    assert edi_agent.format_failures(1, 3) == "1/3"
+
+def test_format_interval():
+    assert edi_agent.format_interval(45) == "45s"
+
+def test_cli_add_defaults_interval_and_threshold(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["check_interval"] == edi_agent.DEFAULT_CHECK_INTERVAL
+    assert node["failure_threshold"] == edi_agent.DEFAULT_FAILURE_THRESHOLD
+
+def test_cli_add_custom_interval_and_threshold(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1", interval=60, threshold=1)
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["check_interval"] == 60
+    assert node["failure_threshold"] == 1
+
+def test_cli_add_rejects_too_small_interval(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1", interval=1)
+    assert "web" not in edi_agent.load_config()["nodes"]
+    assert "not a valid interval" in capsys.readouterr().out
+
+def test_cli_add_rejects_zero_threshold(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1", threshold=0)
+    assert "web" not in edi_agent.load_config()["nodes"]
+    assert "not a valid threshold" in capsys.readouterr().out
+
+def test_cli_edit_updates_interval_and_threshold(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    edi_agent.cli_edit("web", interval=120, threshold=5)
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["check_interval"] == 120
+    assert node["failure_threshold"] == 5
+
+def test_cli_edit_rejects_invalid_interval(capsys, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    capsys.readouterr()
+    edi_agent.cli_edit("web", interval=2)
+    assert "not a valid interval" in capsys.readouterr().out
+    assert edi_agent.load_config()["nodes"]["web"]["check_interval"] == edi_agent.DEFAULT_CHECK_INTERVAL
+
+def _make_bare_monitor_app(qapp):
+    from edi_agent import load_base_tray_pixmap, build_badged_icon
+    from PySide6.QtGui import QIcon, QColor
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    app = edi_agent.MonitorApp.__new__(edi_agent.MonitorApp)
+    app.dialog = None
+    base = load_base_tray_pixmap()
+    app.icon_neutral = QIcon(base)
+    app.icon_online = build_badged_icon(base, QColor("#2ecc71"))
+    app.icon_offline = build_badged_icon(base, QColor("#e74c3c"))
+    app.tray = QSystemTrayIcon()
+    return app
+
+def test_check_nodes_skips_node_not_yet_due(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1", interval=3600)  # due in an hour
+    original_last_checked = edi_agent.load_config()["nodes"]["web"]["last_checked"]
+
+    app = _make_bare_monitor_app(qapp)
+    call_count = {"n": 0}
+    def counting_check(ip, port=None):
+        call_count["n"] += 1
+        return (False, None)
+    monkeypatch.setattr(edi_agent, "check_target", counting_check)
+
+    app.check_nodes()  # not forced, node isn't due yet
+
+    assert call_count["n"] == 0
+    assert edi_agent.load_config()["nodes"]["web"]["last_checked"] == original_last_checked
+
+def test_check_nodes_force_bypasses_due_check(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1", interval=3600)
+
+    app = _make_bare_monitor_app(qapp)
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 2.0))
+    app.check_nodes(force=True)
+
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["latency_ms"] == 2.0
+
+def test_check_nodes_respects_custom_threshold(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1", threshold=1)  # alert on first failure
+
+    app = _make_bare_monitor_app(qapp)
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
+    app.check_nodes(force=True)
+
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["status"] == "offline"
+    events = edi_agent.load_history()
+    assert len(events) == 1
+    assert events[0]["event"] == "offline"
+
+
+# --- EditNodeDialog interval/threshold validation ---
+
+def test_edit_dialog_rejects_non_numeric_interval(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.EditNodeDialog("web", edi_agent.load_config()["nodes"]["web"])
+    dialog.interval_input.setText("not-a-number")
+    dialog.on_save()
+    assert "Check interval must be a number" in dialog.error_label.text()
+
+def test_edit_dialog_rejects_too_small_interval(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.EditNodeDialog("web", edi_agent.load_config()["nodes"]["web"])
+    dialog.interval_input.setText("1")
+    dialog.on_save()
+    assert "at least 5 seconds" in dialog.error_label.text()
+
+def test_edit_dialog_saves_custom_threshold(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.EditNodeDialog("web", edi_agent.load_config()["nodes"]["web"])
+    dialog.threshold_input.setText("5")
+    dialog.on_save()
+
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["failure_threshold"] == 5
