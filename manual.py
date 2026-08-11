@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# EDI Agent - System Tray Node Monitor & Alert Agent
+# 8-Bit Agent - System Tray Node Monitor & Alert Agent
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -9,16 +9,19 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap, QFont
 
-from edi_agent import __version__
+from edi_agent import __version__, APP_NAME, DEFAULT_WEB_PORT
 
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
 
 MANUAL_HTML = f"""
-<h2>EDI Agent (v{__version__}) - User Manual & Command Reference</h2>
+<h2>{APP_NAME} (v{__version__}) - User Manual & Command Reference</h2>
 
-<p><b>EDI Agent</b> is a background LAN node monitoring daemon and desktop tray application.</p>
+<p><b>{APP_NAME}</b> (formerly EDI Agent) is a background LAN node monitoring
+daemon and desktop tray application. Full documentation, including a copy of
+this manual, is at
+<a href="http://8bitbunker.org/apps/8bb-agent/latest/guide.html">8bitbunker.org</a>.</p>
 
 <hr>
 
@@ -68,6 +71,12 @@ MANUAL_HTML = f"""
       addition to the desktop popup. <code>test</code> sends a message immediately to confirm
       it works. The webhook URL is never printed back out or written to the log file.</li>
       <br>
+  <li><b>Run the Web Dashboard Standalone:</b><br>
+      <code>edi-agent web [--port PORT]</code><br>
+      Runs just the local web dashboard in the foreground, with no tray icon or
+      desktop session required &mdash; useful for a headless machine. Defaults to
+      port {DEFAULT_WEB_PORT} on 127.0.0.1.</li>
+      <br>
   <li><b>Open Manual / Help:</b><br>
       <code>edi-agent help</code><br>
       Opens this interactive manual window.</li>
@@ -79,6 +88,7 @@ MANUAL_HTML = f"""
 <ul>
   <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the Dashboard, open this manual, send test alerts, configure Discord alerts, switch the theme, or exit the agent.</li>
   <li><b>Discord Webhook Dialog:</b> Paste a Discord incoming webhook URL, save it, and send a test message &mdash; all from the tray menu, no terminal needed. Clearing the field and saving removes it again.</li>
+  <li><b>Web Dashboard:</b> Choose <b>View Web UI</b> from the tray menu to open a local web dashboard in your browser (<code>http://127.0.0.1:{DEFAULT_WEB_PORT}</code> by default) &mdash; the same add/edit/delete/refresh actions as the tray, with delete confirmations and toast notifications, no terminal needed. Bound to 127.0.0.1 only; it is never reachable from other machines on your network. It cannot show live pop-up alerts the way the tray does, since your browser doesn't stay open &mdash; use a Discord webhook alongside it for that.</li>
   <li><b>Dark / Light Theme:</b> Toggle from the tray menu at any time. The choice is saved and restored on the next launch. Defaults to dark.</li>
   <li><b>Infrastructure Dashboard:</b> Metric cards (Total Nodes, Online, Offline, Avg Latency) summarize fleet health at a glance above a sortable table (click any column header) &mdash; check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time per node.</li>
   <li><b>Add Node:</b> Click <b>Add</b> to register a new node &mdash; name, IP, optional TCP port, check interval, and alert threshold &mdash; without touching the terminal.</li>
@@ -95,12 +105,20 @@ MANUAL_HTML = f"""
 <p>Target registry configuration is stored in JSON format at:</p>
 <code>~/.config/edi-alert-agent/nodes.json</code>
 <p><i>The background systemd daemon dynamically reloads changes made via CLI in real-time.</i></p>
+
+<hr>
+
+<h3>Frequently Asked Questions</h3>
+<p>See <code>docs/FAQ.md</code> in the repository, or
+<a href="http://8bitbunker.org/apps/8bb-agent/latest/guide.html">the online guide</a>,
+for answers to the most common questions &mdash; other desktop environments,
+Windows support, and Docker.</p>
 """
 
 class ManualDialog(QDialog):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"EDI Agent (v{__version__}) - Help & Manual")
+        self.setWindowTitle(f"{APP_NAME} (v{__version__}) - Help & Manual")
         self.resize(600, 520)
 
         if LOGO_PATH.exists():
@@ -117,7 +135,7 @@ class ManualDialog(QDialog):
             logo_label.setPixmap(pixmap)
             header_layout.addWidget(logo_label)
 
-        title = QLabel(f"EDI Agent (v{__version__}) Help")
+        title = QLabel(f"{APP_NAME} (v{__version__}) Help")
         font = QFont()
         font.setPointSize(14)
         font.setBold(True)

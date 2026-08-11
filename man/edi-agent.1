@@ -1,19 +1,28 @@
-.TH EDI-AGENT 1 "2026" "EDI Agent 1.8.0" "User Commands"
+.TH EDI-AGENT 1 "2026" "8-Bit Agent 1.9.0" "User Commands"
 .SH NAME
-edi-agent \- lightweight LAN node monitoring daemon and tray application
+edi-agent \- lightweight LAN node monitoring daemon and tray application (8-Bit Agent)
 .SH SYNOPSIS
 .B edi-agent
 .I command
 [\fIARGS\fR] [\fIOPTIONS\fR]
 .SH DESCRIPTION
 .B edi-agent
-is a background LAN node monitoring daemon and PySide6 system tray
-application for Fedora KDE Plasma (and other Qt/systemd-based Linux
-desktops). It periodically checks local infrastructure nodes \(em
-Proxmox hosts, Plex servers, internal web applications, databases,
+is the command-line entry point for
+.BR "8-Bit Agent" ,
+formerly named EDI Agent \(em a background LAN node monitoring daemon and
+PySide6 system tray application for Fedora KDE Plasma (and other
+Qt/systemd-based Linux desktops). The command name, config directory, and
+systemd unit name are unchanged from the EDI Agent era so existing
+installs keep working without migration; only the product's display name
+and branding changed. It periodically checks local infrastructure nodes
+\(em Proxmox hosts, Plex servers, internal web applications, databases,
 and so on \(em either with a plain ICMP ping or a TCP port connect,
 and raises a native desktop notification whenever a node's status
 changes.
+.PP
+Full documentation, including a copy of this manual, is published at
+.UR http://8bitbunker.org/apps/8bb-agent/latest/guide.html
+.UE .
 .PP
 Running
 .B edi-agent
@@ -107,6 +116,29 @@ Remove the configured webhook. Alerts go back to desktop-only.
 Send a test message to the configured webhook immediately, to confirm
 it works.
 .TP
+.BI "web " "[\-\-port PORT]"
+Run just the local web dashboard in the foreground, with no tray icon,
+DBus, or desktop session required \(em useful on a headless machine.
+Bound to
+.B 127.0.0.1
+only and never to a LAN-reachable address; there is no option to change
+that. Provides the same add/edit/delete/refresh actions as the CLI and
+tray Dashboard, calling the identical underlying functions, with a
+confirmation step before delete. Default port 7317 (override with
+\fB\-\-port\fR or the
+.I web_ui_port
+key in
+.IR settings.json ).
+When running the tray daemon
+.RB ( "edi-agent gui" ),
+this same web dashboard also runs automatically in the background;
+select
+.B "View Web UI"
+from the tray menu to open it in a browser. It cannot deliver live
+pop-up alerts the way the tray does \(em pair it with
+.B "edi-agent webhook set"
+for that.
+.TP
 .B help
 Open the interactive PySide6 manual window
 .RI ( manual.py ).
@@ -127,9 +159,12 @@ daemon \(em CLI changes apply without a service restart.
 The most recent 200 offline/recovery alert events.
 .TP
 .I ~/.config/edi-alert-agent/settings.json
-GUI/alert preferences: the selected theme (dark/light) and the
-configured Discord webhook URL, if any. Never printed back out by any
-command and never written to the log file.
+GUI/alert preferences: the selected theme (dark/light), the configured
+Discord webhook URL if any, and an optional
+.I web_ui_port
+override for the local web dashboard (default 7317). Webhook URL is
+never printed back out by any command and never written to the log
+file.
 .TP
 .I ~/.local/state/edi-alert-agent/edi-agent.log
 Rotating application log (1MB per file, 3 backups kept) covering CLI
@@ -189,15 +224,27 @@ edi-agent webhook set https://discord.com/api/webhooks/XXXXXXXXXXXX/XXXXXXXX
 edi-agent webhook test
 .fi
 .RE
+.PP
+Run just the web dashboard on a headless machine, on a custom port:
+.RS
+.nf
+edi-agent web --port 9000
+.fi
+.RE
 .SH SEE ALSO
 .BR edi-agent-packaging (7)
 for how this project is packaged (pyproject.toml, editable installs,
 console-script entry points).
 .PP
-Full project documentation, including the GUI Dashboard, is in the
-repository's
+Full project documentation, including the GUI Dashboard and web
+dashboard, is in the repository's
 .I README.md
-and interactive
-.IR "edi-agent help" .
+and
+.IR docs/FAQ.md ,
+in interactive
+.IR "edi-agent help" ,
+and online at
+.UR http://8bitbunker.org/apps/8bb-agent/latest/guide.html
+.UE .
 .SH BUGS
 Report issues via the project's GitHub repository.

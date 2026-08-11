@@ -1,6 +1,6 @@
-.TH EDI-AGENT-PACKAGING 7 "2026" "EDI Agent 1.7.0" "Miscellaneous"
+.TH EDI-AGENT-PACKAGING 7 "2026" "8-Bit Agent 1.9.0" "Miscellaneous"
 .SH NAME
-edi-agent-packaging \- how EDI Agent is packaged, and how to package Python
+edi-agent-packaging \- how 8-Bit Agent is packaged, and how to package Python
 projects like it
 .SH DESCRIPTION
 This page explains how
@@ -26,7 +26,7 @@ version, depend on, or eventually publish."
 .SH THE FIX: pyproject.toml
 Modern Python packaging is driven by a single
 .I pyproject.toml
-file at the project root. EDI Agent's looks like this (trimmed):
+file at the project root. 8-Bit Agent's looks like this (trimmed):
 .RS
 .nf
 [build-system]
@@ -71,7 +71,7 @@ Any Python project that wants a CLI command needs exactly this shape:
 a callable function, referenced here.
 .TP
 .B [tool.setuptools] py-modules
-EDI Agent isn't a nested package (no
+8-Bit Agent isn't a nested package (no
 .I edi_agent/__init__.py
 subdirectory) \(em it's three flat
 .I .py
@@ -107,7 +107,7 @@ pip install -e .
 .PP
 The
 .B \-e
-(editable) flag matters specifically for this project. EDI Agent loads its
+(editable) flag matters specifically for this project. 8-Bit Agent loads its
 logo and
 .I manual.py
 using paths relative to its own source file
@@ -155,7 +155,7 @@ edi-agent list
 .fi
 .RE
 .SH WHAT THIS DOES NOT COVER
-This setup makes EDI Agent installable from source with a real entry point
+This setup makes 8-Bit Agent installable from source with a real entry point
 and version metadata. It does
 .B not
 currently:

@@ -7,17 +7,29 @@ per-request format.
 
 ## What this project is
 
-**EDI Agent** — a lightweight LAN node monitoring daemon and PySide6 system
-tray application for Fedora KDE Plasma. Checks local infrastructure nodes
-(Proxmox, Plex, databases, etc.) via ICMP ping or TCP port connect, and
-raises desktop notifications on status change. Full CLI (`edi-agent`) plus
-a tray-docked GUI Dashboard, both backed by the same functions.
+**8-Bit Agent** (formerly **EDI Agent**, renamed in v1.9.0) — a lightweight
+LAN node monitoring daemon and PySide6 system tray application for Fedora
+KDE Plasma. Checks local infrastructure nodes (Proxmox, Plex, databases,
+etc.) via ICMP ping or TCP port connect, and raises desktop notifications
+on status change. Full CLI (`edi-agent`) plus a tray-docked GUI Dashboard
+and a local web dashboard, all three backed by the same functions.
+
+**Branding note:** only the product's display name/branding changed in the
+rename. The CLI command (`edi-agent`), config directory
+(`~/.config/edi-alert-agent/`), log path, and systemd unit name
+(`edi-alert-agent.service`) were deliberately left as-is — changing any of
+those would break every existing fork/install's config path and systemd
+unit with no migration path. If a full command/path rename ever happens,
+it needs its own migration script, not a silent breaking change. New
+project site: <http://8bitbunker.org>; manual mirror at
+<http://8bitbunker.org/apps/8bb-agent/latest/guide.html>.
 
 Core files: `edi_agent.py` (daemon, CLI, GUI, `main()` entry point),
-`manual.py` (interactive help window), `style.py` (dark/light Qt
+`web_ui.py` (local web dashboard: Flask + waitress, bound to `127.0.0.1`
+only), `manual.py` (interactive help window), `style.py` (dark/light Qt
 stylesheets), `pyproject.toml` (packaging), `install.sh` / `uninstall.sh`,
-`tests/` (pytest suite), `man/` (man pages), `.github/workflows/tests.yml`
-(CI).
+`tests/` (pytest suite), `man/` (man pages), `docs/FAQ.md` (answers to
+recurring community questions), `.github/workflows/tests.yml` (CI).
 
 ## Local testing environment
 
@@ -40,7 +52,7 @@ stylesheets), `pyproject.toml` (packaging), `install.sh` / `uninstall.sh`,
   nontrivial forwarding setup. That kind of testing still has to happen
   on the real host, as it has all along.
 
-## Status: shipped (v1.0.0 → v1.8.0)
+## Status: shipped (v1.0.0 → v1.9.0)
 
 - **v1.0.1** — concurrent pinging (fixed UI-freezing sequential loop), IP
   validation, duplicate-node protection, `nodes.json` file locking,
@@ -75,6 +87,21 @@ stylesheets), `pyproject.toml` (packaging), `install.sh` / `uninstall.sh`,
   wired into both offline and recovery transitions in `check_nodes()`.
   First piece of the direction set this session (see Roadmap below) — web
   UI is next.
+- **v1.9.0** — Rebranded EDI Agent → **8-Bit Agent** (display name/branding
+  only — command, config paths, systemd unit unchanged, see note above).
+  Shipped the **local web dashboard**: `web_ui.py` (Flask + waitress),
+  hardcoded to bind `127.0.0.1` only, full node CRUD (Add/Edit/Delete/
+  Refresh) calling the exact same `cli_add`/`cli_edit`/`cli_remove`/
+  `check_nodes` functions as the CLI and tray GUI, delete confirmation
+  modal, toast notifications, default port 7317 (override via
+  `--port` or `settings.json`'s `web_ui_port`). Runs automatically inside
+  the tray daemon (new tray menu entry "View Web UI") and standalone via
+  the new `edi-agent web` CLI command for headless/future-Docker use.
+  Added `docs/FAQ.md` answering the recurring community questions (GNOME/
+  other desktops need the AppIndicator extension, Windows not yet
+  supported but not a rewrite, no official Docker image yet but
+  `edi-agent web` is the piece that makes one coherent). Second piece of
+  the direction set in v1.8.0 — cross-platform desktop support is next.
 
 ## How the adaptive scheduler works (v1.7.0)
 
@@ -104,13 +131,15 @@ this order:
 
 1. **Discord/webhook alerts** — shipped in v1.8.0. Small, additive, didn't
    touch existing architecture.
-2. **Web UI** — next up now that webhooks have landed. A local read-only
-   status page for checking fleet health from a phone/other machine on the
-   LAN. Bigger lift: new server component, new questions about who can
-   reach it (auth? LAN-only bind?) — needs its own planning pass, not to
-   be bolted on casually.
-3. **Cross-platform desktop support (Windows/Mac)** — explicitly deferred
-   to "next release," i.e. after 1 and 2. Important context for whoever
+2. **Web UI** — shipped in v1.9.0, alongside the EDI Agent → 8-Bit Agent
+   rebrand. Landed as a **local, loopback-only** dashboard (`127.0.0.1`
+   hardcoded, never LAN) with full CRUD parity, not a read-only status
+   page — the owner explicitly wanted delete/add/edit to work from the
+   browser too, same as CLI/tray, with a delete confirmation and toasts.
+   Runs both embedded in the tray daemon and standalone (`edi-agent web`)
+   for future headless use. See `web_ui.py` and `docs/FAQ.md`.
+3. **Cross-platform desktop support (Windows/Mac)** — now next up.
+   Important context for whoever
    picks this up: it does **not** require a rewrite. Qt/PySide6 already
    has cross-platform tray + notification APIs; the actual Linux-only
    parts are narrow — the `ping` command's flags (`-c`/`-W` vs `-n`/`-w`),
@@ -155,6 +184,8 @@ above are settled.
 - `man/edi-agent-packaging.7` — how `pyproject.toml`/entry points/editable
   installs work here, written as a general packaging reference too
 - `manual.py` — in-app interactive help window (`edi-agent help`)
+- `docs/FAQ.md` — answers to recurring community questions (other desktop
+  environments, Windows support, Docker)
 - This file — status, roadmap, and change log
 
 ## Changelog Checklist
@@ -164,6 +195,50 @@ docs, or tests — check off what actually happened so this file stays a
 reliable record. Newest entry on top. Keep entries short: what changed,
 not why (the "why" belongs in this file's other sections if it's still
 relevant, or is just obvious from the diff).
+
+### 2026-08-11 (4) — v1.9.0: Rebrand to 8-Bit Agent + local web dashboard
+
+- [x] Added — `web_ui.py`: Flask + waitress local web dashboard, hardcoded
+      bind to `127.0.0.1` only (no setting can change this), default port
+      7317 (override via `edi-agent web --port` or `settings.json`'s
+      `web_ui_port`). Single-file embedded HTML/CSS/JS page (no template
+      files), matching the project's existing flat-file style.
+- [x] Added — full node CRUD via the web dashboard: `/api/nodes` (GET/
+      POST), `/api/nodes/<name>` (PUT/DELETE), `/api/refresh`,
+      `/api/history` — all calling the same `cli_add`/`cli_edit`/
+      `cli_remove`/`check_nodes` functions the CLI and tray GUI already
+      use, so there's no second copy of the business logic. Delete
+      requires a confirmation modal; all actions surface as toasts.
+- [x] Added — runs automatically inside the tray daemon on a background
+      thread (new tray menu entry "View Web UI" opens it in the default
+      browser) and standalone via the new `edi-agent web [--port PORT]`
+      CLI command, for future headless/container use with no tray or
+      desktop session required.
+- [x] Added — 18 new tests (128 total) in `tests/test_web_ui.py` using
+      Flask's `test_client()` — no real sockets bound during test runs.
+- [x] Rebranded — EDI Agent → **8-Bit Agent** in all user-facing text
+      (window titles, tray tooltip/menu, notifications, manual, README,
+      man pages). Deliberately did **not** rename the `edi-agent` CLI
+      command, `~/.config/edi-alert-agent/` config directory, log path,
+      or `edi-alert-agent.service` systemd unit — see the branding note
+      under "What this project is" above for why.
+- [x] Added — `docs/FAQ.md` answering the recurring questions users have
+      actually asked: GNOME/other-desktop tray support (needs the
+      AppIndicator extension), Windows support (not yet, not a rewrite),
+      why not .NET, and Docker/headless (now unblocked by `edi-agent web`,
+      no official image yet).
+- [x] Updated — `pyproject.toml`/`requirements.txt` (Flask, waitress
+      dependencies; `web_ui` added to `py-modules`), README (Key Features,
+      Project Structure, CLI table/examples, GUI section, Configuration
+      Storage, Diagnostics, Documentation), `man/edi-agent.1` and
+      `man/edi-agent-packaging.7` (rebrand + `web` subcommand), `manual.py`
+      (rebrand + Web Dashboard sections)
+- [x] Updated — roadmap: Web UI marked shipped; cross-platform desktop
+      support is next
+- Verified live: tray daemon (`MonitorApp`) confirmed to actually boot the
+  embedded web server and serve `/api/nodes` correctly in a smoke test
+  against an isolated `$HOME`; real `nodes.json`/`settings.json` checked
+  untouched (md5 before/after) throughout all testing
 
 ### 2026-08-11 (3) — v1.8.0: Discord webhook alerts
 

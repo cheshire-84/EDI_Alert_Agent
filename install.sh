@@ -10,7 +10,7 @@ echo "[*] Setting up Python virtual environment..."
 python3 -m venv "$PROJECT_DIR/venv"
 "$PROJECT_DIR/venv/bin/pip" install --upgrade pip
 
-echo "[*] Installing EDI Agent as an editable package (pip install -e .)..."
+echo "[*] Installing 8-Bit Agent as an editable package (pip install -e .)..."
 "$PROJECT_DIR/venv/bin/pip" install -e "$PROJECT_DIR"
 
 echo "[*] Linking global CLI command (~/.local/bin/edi-agent)..."

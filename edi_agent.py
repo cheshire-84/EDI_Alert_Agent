@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# EDI Agent - System Tray Node Monitor & Alert Agent
+# 8-Bit Agent - System Tray Node Monitor & Alert Agent
 import sys
 import json
 import time
@@ -10,6 +10,7 @@ import ipaddress
 import threading
 import subprocess
 import argparse
+import webbrowser
 import urllib.request
 import concurrent.futures
 from pathlib import Path
@@ -35,8 +36,10 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
 from style import DARK_GLASS_STYLE, LIGHT_GLASS_STYLE
+import web_ui
 
-__version__ = "1.8.0"
+__version__ = "1.9.0"
+APP_NAME = "8-Bit Agent"
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
@@ -50,6 +53,7 @@ MAX_HISTORY_ENTRIES = 200
 DEFAULT_CHECK_INTERVAL = 30
 DEFAULT_FAILURE_THRESHOLD = 2
 DEFAULT_THEME = "dark"
+DEFAULT_WEB_PORT = 7317
 
 _logger = logging.getLogger("edi_agent")
 _logger.setLevel(logging.INFO)
@@ -225,7 +229,7 @@ def cli_webhook_test():
         print("[!] No webhook configured. Use 'edi-agent webhook set <url>' first.")
         return False
     print("[?] Sending test message to webhook...", end=" ", flush=True)
-    ok = send_discord_webhook(f"EDI Agent (v{__version__}): Test message. Webhook alerts are working.")
+    ok = send_discord_webhook(f"{APP_NAME} (v{__version__}): Test message. Webhook alerts are working.")
     print("Done!" if ok else "Failed.")
     if not ok:
         print("[!] Could not reach the webhook URL. Check the URL and your network.")
@@ -519,8 +523,8 @@ def cli_list():
 def cli_test():
     print("[*] Triggering test notification...")
     send_desktop_notification(
-        f"EDI Agent (v{__version__}): Test",
-        "This is a test notification from EDI Agent! Desktop alerts are working.",
+        f"{APP_NAME} (v{__version__}): Test",
+        f"This is a test notification from {APP_NAME}! Desktop alerts are working.",
         urgency="critical",
     )
     print("[+] Test notification sent to desktop.")
@@ -829,7 +833,7 @@ class WebhookDialog(QDialog):
 class HistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"EDI Agent (v{__version__}) - Alert History")
+        self.setWindowTitle(f"{APP_NAME} (v{__version__}) - Alert History")
         self.resize(680, 420)
         if LOGO_PATH.exists():
             self.setWindowIcon(QIcon(str(LOGO_PATH)))
@@ -897,7 +901,7 @@ class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
         self.monitor_app = monitor_app
-        self.setWindowTitle(f"EDI Agent (v{__version__}) - Dashboard")
+        self.setWindowTitle(f"{APP_NAME} (v{__version__}) - Dashboard")
         self.resize(980, 560)
         self.setMinimumSize(760, 440)
 
@@ -1192,11 +1196,11 @@ class MonitorApp:
 
         self.tray = QSystemTrayIcon()
         self.tray.setIcon(self.icon_neutral)
-        self.tray.setToolTip(f"EDI Agent (v{__version__})")
+        self.tray.setToolTip(f"{APP_NAME} (v{__version__})")
         self.tray.setVisible(True)
 
         self.menu = QMenu()
-        self.status_action = self.menu.addAction(f"EDI Agent (v{__version__}): Active")
+        self.status_action = self.menu.addAction(f"{APP_NAME} (v{__version__}): Active")
         self.status_action.setEnabled(False)
         self.menu.addSeparator()
         self.manage_action = self.menu.addAction("Show Status Window")
@@ -1209,6 +1213,8 @@ class MonitorApp:
         self.test_action.triggered.connect(self.trigger_test_alert)
         self.webhook_action = self.menu.addAction("Discord Webhook...")
         self.webhook_action.triggered.connect(self.show_webhook_dialog)
+        self.web_ui_action = self.menu.addAction("View Web UI")
+        self.web_ui_action.triggered.connect(self.open_web_ui)
         self.theme_action = self.menu.addAction(self._theme_action_label())
         self.theme_action.triggered.connect(self.toggle_theme)
         self.quit_action = self.menu.addAction("Quit Agent")
@@ -1220,7 +1226,14 @@ class MonitorApp:
         self.next_check_timer.setSingleShot(True)
         self.next_check_timer.timeout.connect(self.check_nodes)
         self.next_check_timer.start(500)
-        get_logger().info(f"EDI Agent v{__version__} daemon started")
+
+        self.web_port = load_settings().get("web_ui_port", DEFAULT_WEB_PORT)
+        threading.Thread(
+            target=web_ui.run_web_server,
+            kwargs={"port": self.web_port, "monitor_app": self},
+            daemon=True,
+        ).start()
+        get_logger().info(f"{APP_NAME} v{__version__} daemon started (web UI on 127.0.0.1:{self.web_port})")
 
     def _theme_action_label(self):
         return "Switch to Light Theme" if self.theme == "dark" else "Switch to Dark Theme"
@@ -1234,8 +1247,8 @@ class MonitorApp:
 
     def trigger_test_alert(self):
         self.tray.showMessage(
-            f"EDI Agent (v{__version__}): Test",
-            "This is a test notification from EDI Agent!",
+            f"{APP_NAME} (v{__version__}): Test",
+            f"This is a test notification from {APP_NAME}!",
             QSystemTrayIcon.MessageIcon.Information,
             5000,
         )
@@ -1327,17 +1340,17 @@ class MonitorApp:
         nodes = cfg.get("nodes", {})
         if not nodes:
             self.tray.setIcon(self.icon_neutral)
-            self.tray.setToolTip(f"EDI Agent (v{__version__}): No nodes monitored")
+            self.tray.setToolTip(f"{APP_NAME} (v{__version__}): No nodes monitored")
             return
         down = [name for name, info in nodes.items() if info.get("status") == "offline"]
         if down:
             self.tray.setIcon(self.icon_offline)
             self.tray.setToolTip(
-                f"EDI Agent (v{__version__}): {len(down)} node(s) offline"
+                f"{APP_NAME} (v{__version__}): {len(down)} node(s) offline"
             )
         else:
             self.tray.setIcon(self.icon_online)
-            self.tray.setToolTip(f"EDI Agent (v{__version__}): All nodes online")
+            self.tray.setToolTip(f"{APP_NAME} (v{__version__}): All nodes online")
 
     def show_manager(self):
         if not self.dialog:
@@ -1356,12 +1369,15 @@ class MonitorApp:
         dialog = WebhookDialog()
         dialog.exec()
 
+    def open_web_ui(self):
+        webbrowser.open(f"http://127.0.0.1:{self.web_port}")
+
     def run(self):
         sys.exit(self.app.exec())
 
 
 def build_arg_parser():
-    parser = argparse.ArgumentParser(description=f"EDI Agent (v{__version__})")
+    parser = argparse.ArgumentParser(description=f"{APP_NAME} (v{__version__})")
     subparsers = parser.add_subparsers(dest="command")
 
     add_parser = subparsers.add_parser("add", help="Add a node to monitor")
@@ -1421,6 +1437,14 @@ def build_arg_parser():
     webhook_sub.add_parser("clear", help="Remove the configured webhook")
     webhook_sub.add_parser("test", help="Send a test message to the configured webhook")
 
+    web_cmd_parser = subparsers.add_parser(
+        "web", help="Run the local web dashboard standalone (no tray icon required)"
+    )
+    web_cmd_parser.add_argument(
+        "--port", type=int, default=None,
+        help=f"Port to bind on 127.0.0.1 (default {DEFAULT_WEB_PORT})",
+    )
+
     subparsers.add_parser("help", help="Open manual window")
     subparsers.add_parser("gui", help="Run system tray monitor agent")
     return parser
@@ -1467,6 +1491,11 @@ def main():
             success = False
     elif args.command == "help":
         success = open_manual_window()
+    elif args.command == "web":
+        port = args.port if args.port is not None else load_settings().get("web_ui_port", DEFAULT_WEB_PORT)
+        print(f"[*] {APP_NAME} web dashboard running at http://127.0.0.1:{port} (Ctrl+C to stop)")
+        web_ui.run_web_server(port=port)
+        return
     else:
         app = MonitorApp()
         app.run()
