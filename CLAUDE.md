@@ -19,6 +19,27 @@ stylesheets), `pyproject.toml` (packaging), `install.sh` / `uninstall.sh`,
 `tests/` (pytest suite), `man/` (man pages), `.github/workflows/tests.yml`
 (CI).
 
+## Local testing environment
+
+- **pytest, offscreen Qt** (`QT_QPA_PLATFORM=offscreen`) — the default for
+  everything: CLI logic, config/history persistence, GUI dialogs and
+  widgets. No container needed for this; it's fast and already isolated
+  from the real `~/.config/edi-alert-agent/` via `conftest.py`.
+- **`podman` is installed on this host** (rootless, daemonless, Fedora's
+  native container tool — confirmed working 2026-08-11, pulls
+  `registry.fedoraproject.org/fedora:latest` fine). Available for the one
+  thing pytest can't safely cover: running `install.sh`/`uninstall.sh` for
+  real inside a disposable Fedora container, without touching the host's
+  actual venv or live systemd user service. Not yet wired into a
+  Containerfile/script — do that first if a session actually needs it,
+  rather than assuming the plumbing exists.
+- What a container **won't** help with: the system tray icon, DBus
+  desktop notifications, and KDE Plasma-specific rendering all need a
+  real desktop session (X11/Wayland + DBus session bus + a running
+  StatusNotifier host) that a bare container doesn't have without
+  nontrivial forwarding setup. That kind of testing still has to happen
+  on the real host, as it has all along.
+
 ## Status: shipped (v1.0.0 → v1.7.0)
 
 - **v1.0.1** — concurrent pinging (fixed UI-freezing sequential loop), IP
@@ -117,6 +138,17 @@ docs, or tests — check off what actually happened so this file stays a
 reliable record. Newest entry on top. Keep entries short: what changed,
 not why (the "why" belongs in this file's other sections if it's still
 relevant, or is just obvious from the diff).
+
+### 2026-08-11 (2) — Documented available local testing environment
+
+- [x] Confirmed — `podman` already installed and working on this host
+      (rootless, pulled/ran a Fedora container successfully); no need to
+      install Docker separately
+- [x] Added — "Local testing environment" section above, documenting
+      podman's availability for `install.sh`/`uninstall.sh` testing and
+      its limits (no tray/DBus/desktop testing in a bare container)
+- Not done — no Containerfile or test script exists yet; this session
+  only confirmed and documented capability, didn't build the harness
 
 ### 2026-08-11 — Closed out all "known gaps": exit codes, scheduler, logging, theme, packaging, CI
 
