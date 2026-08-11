@@ -5,12 +5,14 @@ import json
 import time
 import fcntl
 import socket
+import logging
 import ipaddress
 import subprocess
 import argparse
 import concurrent.futures
 from pathlib import Path
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from PySide6.QtWidgets import (
     QApplication,
     QSystemTrayIcon,
@@ -30,19 +32,42 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-from style import DARK_GLASS_STYLE
+from style import DARK_GLASS_STYLE, LIGHT_GLASS_STYLE
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
 MANUAL_PATH = BASE_DIR / "manual.py"
 CONFIG_PATH = Path.home() / ".config" / "edi-alert-agent" / "nodes.json"
 HISTORY_PATH = Path.home() / ".config" / "edi-alert-agent" / "history.json"
+SETTINGS_PATH = Path.home() / ".config" / "edi-alert-agent" / "settings.json"
+LOG_PATH = Path.home() / ".local" / "state" / "edi-alert-agent" / "edi-agent.log"
 MAX_HISTORY_ENTRIES = 200
 
 DEFAULT_CHECK_INTERVAL = 30
 DEFAULT_FAILURE_THRESHOLD = 2
+DEFAULT_THEME = "dark"
+
+_logger = logging.getLogger("edi_agent")
+_logger.setLevel(logging.INFO)
+
+
+def get_logger():
+    """Lazily (re)configures the module logger's file handler to point at the
+    current LOG_PATH, so tests can retarget it via monkeypatch without any
+    log output ever touching a real user's filesystem."""
+    configured_path = getattr(get_logger, "_configured_path", None)
+    if configured_path != LOG_PATH:
+        for handler in list(_logger.handlers):
+            _logger.removeHandler(handler)
+            handler.close()
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=3)
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+        _logger.addHandler(handler)
+        get_logger._configured_path = LOG_PATH
+    return _logger
 
 
 def load_config():
@@ -56,7 +81,8 @@ def load_config():
                 return json.load(f)
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
-    except Exception:
+    except Exception as exc:
+        get_logger().warning(f"load_config: failed to read {CONFIG_PATH}: {exc}")
         return {"nodes": {}}
 
 
@@ -80,7 +106,8 @@ def load_history():
                 return json.load(f)
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
-    except Exception:
+    except Exception as exc:
+        get_logger().warning(f"load_history: failed to read {HISTORY_PATH}: {exc}")
         return []
 
 
@@ -100,6 +127,37 @@ def record_history_event(name, event, message):
         {"timestamp": time.time(), "node": name, "event": event, "message": message}
     )
     save_history(events[-MAX_HISTORY_ENTRIES:])
+
+
+def load_settings():
+    if not SETTINGS_PATH.exists():
+        return {"theme": DEFAULT_THEME}
+    try:
+        with open(SETTINGS_PATH, "r") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                settings = json.load(f)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+        settings.setdefault("theme", DEFAULT_THEME)
+        return settings
+    except Exception as exc:
+        get_logger().warning(f"load_settings: failed to read {SETTINGS_PATH}: {exc}")
+        return {"theme": DEFAULT_THEME}
+
+
+def save_settings(settings):
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_PATH, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            json.dump(settings, f, indent=2)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def get_theme_stylesheet(theme):
+    return LIGHT_GLASS_STYLE if theme == "light" else DARK_GLASS_STYLE
 
 
 def is_valid_ip(ip):
@@ -215,23 +273,23 @@ def build_badged_icon(base_pixmap, badge_color):
 def cli_add(name, ip, force=False, port=None, interval=None, threshold=None):
     if not is_valid_ip(ip):
         print(f"[!] '{ip}' is not a valid IP address.")
-        return
+        return False
     if port is not None and not is_valid_port(port):
         print(f"[!] '{port}' is not a valid port number (must be 1-65535).")
-        return
+        return False
     if interval is not None and not is_valid_interval(interval):
         print(f"[!] '{interval}' is not a valid interval (must be at least 5 seconds).")
-        return
+        return False
     if threshold is not None and not is_valid_threshold(threshold):
         print(f"[!] '{threshold}' is not a valid threshold (must be at least 1).")
-        return
+        return False
     cfg = load_config()
     if name in cfg["nodes"] and not force:
         print(
             f"[!] Node '{name}' already exists ({cfg['nodes'][name]['ip']}). "
             f"Use --force to overwrite, or 'edi-agent remove {name}' first."
         )
-        return
+        return False
     check_desc = f"TCP:{port}" if port else "ping"
     print(
         f"[?] Checking reachability for '{name}' ({ip}) via {check_desc}...",
@@ -255,6 +313,8 @@ def cli_add(name, ip, force=False, port=None, interval=None, threshold=None):
     save_config(cfg)
     status_str = "ONLINE" if is_online else "OFFLINE"
     print(f"Done!\n[+] Added node: {name} ({ip}) -> Status: {status_str}")
+    get_logger().info(f"add: '{name}' ({ip}) added, status={status}")
+    return True
 
 
 def cli_remove(name):
@@ -263,15 +323,17 @@ def cli_remove(name):
         del cfg["nodes"][name]
         save_config(cfg)
         print(f"[-] Removed node: {name}")
-    else:
-        print(f"[!] Node '{name}' not found.")
+        get_logger().info(f"remove: '{name}' removed")
+        return True
+    print(f"[!] Node '{name}' not found.")
+    return False
 
 
 def cli_edit(name, ip=None, port=None, clear_port=False, interval=None, threshold=None):
     cfg = load_config()
     if name not in cfg["nodes"]:
         print(f"[!] Node '{name}' not found.")
-        return
+        return False
     if (
         ip is None
         and port is None
@@ -282,22 +344,22 @@ def cli_edit(name, ip=None, port=None, clear_port=False, interval=None, threshol
         print(
             "[!] Nothing to update. Specify --ip, --port/--clear-port, --interval, and/or --threshold."
         )
-        return
+        return False
     if port is not None and clear_port:
         print("[!] Cannot use --port and --clear-port together.")
-        return
+        return False
     if ip is not None and not is_valid_ip(ip):
         print(f"[!] '{ip}' is not a valid IP address.")
-        return
+        return False
     if port is not None and not is_valid_port(port):
         print(f"[!] '{port}' is not a valid port number (must be 1-65535).")
-        return
+        return False
     if interval is not None and not is_valid_interval(interval):
         print(f"[!] '{interval}' is not a valid interval (must be at least 5 seconds).")
-        return
+        return False
     if threshold is not None and not is_valid_threshold(threshold):
         print(f"[!] '{threshold}' is not a valid threshold (must be at least 1).")
-        return
+        return False
     node = cfg["nodes"][name]
     if ip is not None:
         node["ip"] = ip
@@ -323,6 +385,8 @@ def cli_edit(name, ip=None, port=None, clear_port=False, interval=None, threshol
     save_config(cfg)
     status_str = "ONLINE" if is_online else "OFFLINE"
     print(f"Done!\n[+] Updated node: {name} ({node['ip']}) -> Status: {status_str}")
+    get_logger().info(f"edit: '{name}' updated, status={status_str.lower()}")
+    return True
 
 
 def format_latency(latency_ms):
@@ -974,8 +1038,8 @@ class MonitorApp:
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
 
-        # Apply Modern Glass Theme Globally
-        self.app.setStyleSheet(DARK_GLASS_STYLE)
+        self.theme = load_settings().get("theme", DEFAULT_THEME)
+        self.app.setStyleSheet(get_theme_stylesheet(self.theme))
 
         base_pixmap = load_base_tray_pixmap()
         self.icon_neutral = QIcon(base_pixmap)
@@ -999,16 +1063,28 @@ class MonitorApp:
         self.help_action.triggered.connect(open_manual_window)
         self.test_action = self.menu.addAction("Send Test Alert")
         self.test_action.triggered.connect(self.trigger_test_alert)
+        self.theme_action = self.menu.addAction(self._theme_action_label())
+        self.theme_action.triggered.connect(self.toggle_theme)
         self.quit_action = self.menu.addAction("Quit Agent")
         self.quit_action.triggered.connect(self.app.quit)
         self.tray.setContextMenu(self.menu)
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.check_nodes)
-        self.timer.start(30000)
-
-        QTimer.singleShot(500, self.check_nodes)
         self.dialog = None
+        self.next_check_timer = QTimer()
+        self.next_check_timer.setSingleShot(True)
+        self.next_check_timer.timeout.connect(self.check_nodes)
+        self.next_check_timer.start(500)
+        get_logger().info(f"EDI Agent v{__version__} daemon started")
+
+    def _theme_action_label(self):
+        return "Switch to Light Theme" if self.theme == "dark" else "Switch to Dark Theme"
+
+    def toggle_theme(self):
+        self.theme = "light" if self.theme == "dark" else "dark"
+        self.app.setStyleSheet(get_theme_stylesheet(self.theme))
+        save_settings({**load_settings(), "theme": self.theme})
+        self.theme_action.setText(self._theme_action_label())
+        get_logger().info(f"theme switched to {self.theme}")
 
     def trigger_test_alert(self):
         self.tray.showMessage(
@@ -1022,6 +1098,7 @@ class MonitorApp:
         cfg = load_config()
         if not cfg["nodes"]:
             self.refresh_tray_icon(cfg)
+            self.schedule_next_check()
             return
         now = time.time()
         due_nodes = {
@@ -1054,6 +1131,7 @@ class MonitorApp:
                             10000,
                         )
                         record_history_event(name, "offline", message)
+                        get_logger().warning(f"'{name}' ({ip}) marked OFFLINE after {failures} failures")
                 else:
                     info["failures"] = 0
                     if prev_status != "online":
@@ -1067,10 +1145,35 @@ class MonitorApp:
                                 5000,
                             )
                             record_history_event(name, "online", message)
+                            get_logger().info(f"'{name}' ({ip}) back ONLINE")
             save_config(cfg)
         self.refresh_tray_icon(cfg)
         if self.dialog and self.dialog.isVisible():
             self.dialog.reload_data()
+        self.schedule_next_check()
+
+    def schedule_next_check(self):
+        """Self-reschedules rather than relying on a fixed 30s QTimer, so a
+        node with a shorter --interval is actually checked that often instead
+        of being limited to the daemon's old fixed tick rate."""
+        cfg = load_config()
+        nodes = cfg.get("nodes", {})
+        if not nodes:
+            next_ms = DEFAULT_CHECK_INTERVAL * 1000
+        else:
+            now = time.time()
+            remaining = [
+                max(
+                    0,
+                    info.get("check_interval", DEFAULT_CHECK_INTERVAL)
+                    - (now - info.get("last_checked", 0)),
+                )
+                for info in nodes.values()
+            ]
+            next_s = min(remaining)
+            next_ms = max(1000, int(next_s * 1000))
+        self.next_check_timer.stop()
+        self.next_check_timer.start(next_ms)
 
     def refresh_tray_icon(self, cfg):
         nodes = cfg.get("nodes", {})
@@ -1105,7 +1208,7 @@ class MonitorApp:
         sys.exit(self.app.exec())
 
 
-if __name__ == "__main__":
+def build_arg_parser():
     parser = argparse.ArgumentParser(description=f"EDI Agent (v{__version__})")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -1159,10 +1262,14 @@ if __name__ == "__main__":
 
     subparsers.add_parser("help", help="Open manual window")
     subparsers.add_parser("gui", help="Run system tray monitor agent")
+    return parser
 
-    args = parser.parse_args()
+
+def main():
+    args = build_arg_parser().parse_args()
+
     if args.command == "add":
-        cli_add(
+        success = cli_add(
             args.name,
             args.ip,
             force=args.force,
@@ -1171,9 +1278,9 @@ if __name__ == "__main__":
             threshold=args.threshold,
         )
     elif args.command == "remove":
-        cli_remove(args.name)
+        success = cli_remove(args.name)
     elif args.command == "edit":
-        cli_edit(
+        success = cli_edit(
             args.name,
             ip=args.ip,
             port=args.port,
@@ -1182,13 +1289,21 @@ if __name__ == "__main__":
             threshold=args.threshold,
         )
     elif args.command == "list":
-        cli_list()
+        success = cli_list()
     elif args.command == "test":
-        cli_test()
+        success = cli_test()
     elif args.command == "history":
-        cli_history(limit=args.limit)
+        success = cli_history(limit=args.limit)
     elif args.command == "help":
-        open_manual_window()
+        success = open_manual_window()
     else:
         app = MonitorApp()
         app.run()
+        return
+
+    if success is False:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

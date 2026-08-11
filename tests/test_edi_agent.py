@@ -1,4 +1,7 @@
+import sys
 import time
+
+import pytest
 
 import edi_agent
 
@@ -325,23 +328,11 @@ def test_cli_history_respects_limit(capsys):
     assert "node4" in out and "node3" in out
     assert "node0" not in out
 
-def test_check_nodes_records_history_on_offline_and_recovery(monkeypatch):
-    from PySide6.QtWidgets import QApplication
-    QApplication.instance() or QApplication([])
-
+def test_check_nodes_records_history_on_offline_and_recovery(qapp, monkeypatch):
     monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
     edi_agent.cli_add("web", "10.0.0.1")
 
-    app = edi_agent.MonitorApp.__new__(edi_agent.MonitorApp)
-    app.dialog = None
-    from edi_agent import load_base_tray_pixmap, build_badged_icon
-    from PySide6.QtGui import QIcon, QColor
-    from PySide6.QtWidgets import QSystemTrayIcon
-    base = load_base_tray_pixmap()
-    app.icon_neutral = QIcon(base)
-    app.icon_online = build_badged_icon(base, QColor("#2ecc71"))
-    app.icon_offline = build_badged_icon(base, QColor("#e74c3c"))
-    app.tray = QSystemTrayIcon()
+    app = _make_bare_monitor_app(qapp)
 
     monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
     app.check_nodes(force=True)
@@ -444,6 +435,7 @@ def _make_bare_monitor_app(qapp):
     from edi_agent import load_base_tray_pixmap, build_badged_icon
     from PySide6.QtGui import QIcon, QColor
     from PySide6.QtWidgets import QSystemTrayIcon
+    from PySide6.QtCore import QTimer
 
     app = edi_agent.MonitorApp.__new__(edi_agent.MonitorApp)
     app.dialog = None
@@ -452,6 +444,9 @@ def _make_bare_monitor_app(qapp):
     app.icon_online = build_badged_icon(base, QColor("#2ecc71"))
     app.icon_offline = build_badged_icon(base, QColor("#e74c3c"))
     app.tray = QSystemTrayIcon()
+    app.next_check_timer = QTimer()
+    app.next_check_timer.setSingleShot(True)
+    app.next_check_timer.timeout.connect(app.check_nodes)
     return app
 
 def test_check_nodes_skips_node_not_yet_due(qapp, monkeypatch):
@@ -633,3 +628,114 @@ def test_metric_cards_reflect_node_counts(qapp, monkeypatch):
     assert dialog.card_total.findChild(edi_agent.QLabel, "Val_TotalNodes").text() == "2"
     assert dialog.card_online.findChild(edi_agent.QLabel, "Val_Online").text() == "1"
     assert dialog.card_offline.findChild(edi_agent.QLabel, "Val_Offline").text() == "1"
+
+
+# --- CLI return values / exit codes ---
+
+def test_cli_add_returns_true_on_success(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    assert edi_agent.cli_add("web", "10.0.0.1") is True
+
+def test_cli_add_returns_false_on_invalid_ip():
+    assert edi_agent.cli_add("web", "not-an-ip") is False
+
+def test_cli_remove_returns_true_when_removed(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    assert edi_agent.cli_remove("web") is True
+
+def test_cli_remove_returns_false_when_missing():
+    assert edi_agent.cli_remove("ghost") is False
+
+def test_cli_edit_returns_true_on_success(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    assert edi_agent.cli_edit("web", ip="10.0.0.2") is True
+
+def test_cli_edit_returns_false_on_missing_node():
+    assert edi_agent.cli_edit("ghost", ip="10.0.0.1") is False
+
+def test_main_exits_nonzero_on_validation_failure(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["edi-agent", "add", "web", "not-an-ip"])
+    with pytest.raises(SystemExit) as exc_info:
+        edi_agent.main()
+    assert exc_info.value.code == 1
+
+def test_main_does_not_exit_on_success(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    monkeypatch.setattr(sys, "argv", ["edi-agent", "add", "web", "10.0.0.1"])
+    edi_agent.main()  # should not raise
+    assert "web" in edi_agent.load_config()["nodes"]
+
+def test_main_does_not_exit_for_list_command(capsys, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["edi-agent", "list"])
+    edi_agent.main()  # should not raise even with no nodes
+    assert "No nodes currently monitored" in capsys.readouterr().out
+
+
+# --- Logging ---
+
+def test_get_logger_writes_to_log_path():
+    logger = edi_agent.get_logger()
+    logger.info("test message")
+    for handler in logger.handlers:
+        handler.flush()
+    assert edi_agent.LOG_PATH.exists()
+    assert "test message" in edi_agent.LOG_PATH.read_text()
+
+def test_cli_add_writes_log_entry(monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    for handler in edi_agent.get_logger().handlers:
+        handler.flush()
+    assert "web" in edi_agent.LOG_PATH.read_text()
+
+
+# --- Settings / theme ---
+
+def test_load_settings_defaults_to_dark():
+    assert edi_agent.load_settings() == {"theme": "dark"}
+
+def test_save_and_load_settings_round_trip():
+    edi_agent.save_settings({"theme": "light"})
+    assert edi_agent.load_settings()["theme"] == "light"
+
+def test_get_theme_stylesheet_dark_and_light():
+    assert edi_agent.get_theme_stylesheet("dark") == edi_agent.DARK_GLASS_STYLE
+    assert edi_agent.get_theme_stylesheet("light") == edi_agent.LIGHT_GLASS_STYLE
+    assert edi_agent.get_theme_stylesheet("bogus") == edi_agent.DARK_GLASS_STYLE
+
+def test_toggle_theme_switches_and_persists(qapp, monkeypatch):
+    app = _make_bare_monitor_app(qapp)
+    app.app = qapp
+    app.theme = "dark"
+    app.theme_action = edi_agent.QPushButton()  # stand-in with .setText()
+
+    app.toggle_theme()
+
+    assert app.theme == "light"
+    assert edi_agent.load_settings()["theme"] == "light"
+
+    app.toggle_theme()
+    assert app.theme == "dark"
+    assert edi_agent.load_settings()["theme"] == "dark"
+
+
+# --- Adaptive check scheduling ---
+
+def test_schedule_next_check_uses_shortest_remaining_interval(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("slow", "10.0.0.1", interval=3600)
+    edi_agent.cli_add("fast", "10.0.0.2", interval=5)
+
+    app = _make_bare_monitor_app(qapp)
+    app.schedule_next_check()
+
+    # The "fast" node (interval=5s, just checked) should dominate scheduling,
+    # so the next tick should be soon, not up to an hour away.
+    assert app.next_check_timer.interval() <= 5000
+
+def test_schedule_next_check_defaults_when_no_nodes(qapp):
+    app = _make_bare_monitor_app(qapp)
+    app.schedule_next_check()
+    assert app.next_check_timer.interval() == edi_agent.DEFAULT_CHECK_INTERVAL * 1000

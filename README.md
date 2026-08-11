@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.6.0)</h1>
+  <h1>EDI Agent (v1.7.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -13,14 +13,16 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 ## Key Features
 
 * **Native KDE Plasma System Tray:** Integrates seamlessly near the desktop clock using PySide6 (Qt6) with custom branding, and a live green/red health badge on the icon itself.
-* **Non-Intrusive Ping Strategy:** Concurrent ICMP checks every 30 seconds (the daemon's tick rate) with 1-second strict timeouts to prevent network bottlenecks.
-* **Per-Node Check Interval & Alert Threshold:** Override the default 30s check interval or 2-strike alert threshold on any individual node — e.g. check a flaky IoT device every 5 minutes, or alert instantly on a critical database.
+* **Non-Intrusive Ping Strategy:** Concurrent ICMP checks with 1-second strict timeouts to prevent network bottlenecks. The daemon reschedules itself dynamically around whichever node is due soonest, rather than polling on a fixed tick.
+* **Per-Node Check Interval & Alert Threshold:** Override the default 30s check interval (minimum 5s, genuinely honored — not rounded up to a fixed daemon tick) or 2-strike alert threshold on any individual node — e.g. check a flaky IoT device every 5 minutes, or alert instantly on a critical database.
+* **Dark / Light Theme:** Defaults to a dark glass theme; switch anytime from the tray menu. The choice is remembered across restarts.
 * **Optional Service-Level Port Checks:** Monitor a specific TCP port instead of ICMP (e.g. `5432` for PostgreSQL, `32400` for Plex, `8006` for Proxmox) to confirm the actual service is up, not just the host.
 * **Configurable Failure Threshold:** Requires 2 consecutive failed checks (by default) before triggering a critical desktop popup, to prevent false alarms over Wi-Fi. Adjustable per node.
 * **Unified CLI & GUI:** Add, edit, and delete nodes from either the terminal (`edi-agent`) or the tray-docked GUI Dashboard — both operate on the same registry, so the two stay interchangeable.
 * **Instant Reachability Validation:** Automatically tests host reachability immediately when adding new nodes via the CLI.
 * **Built-In Interactive Manual:** Includes a standalone documentation GUI (`manual.py`) accessible via terminal command (`edi-agent help`) or the header **`?`** button in the UI.
 * **Systemd User Service:** Runs silently in the background as an unprivileged user daemon that automatically starts on boot.
+* **Rotating Application Log:** CLI actions, node status transitions, and any config/history read errors are logged to `~/.local/state/edi-alert-agent/edi-agent.log` (1MB × 3 backups), independent of `journalctl`.
 
 ---
 
@@ -28,10 +30,14 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 
 ```text
 EDI_Alert_Agent/
+├── .github/
+│   └── workflows/
+│       └── tests.yml     # GitHub Actions CI: runs pytest on every push/PR
 ├── assets/
 │   └── app_logo.png     # Application branding icon (Tray, Window Header, Notifications)
 ├── man/
-│   └── edi-agent.1      # Man page (view with `man man/edi-agent.1`)
+│   ├── edi-agent.1              # Man page (view with `man man/edi-agent.1`)
+│   └── edi-agent-packaging.7    # How this project is packaged (pyproject.toml, entry points)
 ├── tests/
 │   └── test_edi_agent.py  # pytest unit tests for CLI, config, GUI dialogs, and check logic
 ├── CLAUDE.md             # Project status, roadmap, and per-session change log
@@ -41,6 +47,7 @@ EDI_Alert_Agent/
 ├── uninstall.sh         # Removes the service, CLI wrapper, and venv
 ├── LICENSE              # Open-source MIT License
 ├── manual.py            # Interactive PySide6 Help & User Manual window
+├── pyproject.toml        # Package metadata; `pip install -e .` gives you the `edi-agent` command
 ├── README.md            # Project documentation
 ├── requirements.txt     # Python dependency manifest (PySide6)
 ├── requirements-dev.txt # Adds pytest for running the test suite
@@ -177,7 +184,8 @@ edi-agent help
 
 ## Graphical Interface & System Tray
 
-* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the Dashboard, open the manual, trigger a test notification, or quit the application.
+* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the Dashboard, open the manual, trigger a test notification, switch the theme, or quit the application.
+* **Dark / Light Theme:** Toggle from the tray menu at any time; the choice persists across restarts. Defaults to dark.
 * **Infrastructure Dashboard:** The main GUI window. A summary row of metric cards (Total Nodes, Online, Offline, Avg Latency) sits above a sortable table (click any column header) of every registered host — check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time.
 * **Add / Edit / Delete Nodes:** The GUI is no longer read-mostly — **Add**, **Edit**, and **Delete** buttons (plus double-click any row to edit) cover full node lifecycle management without touching a terminal. All three go through the same validated CLI functions under the hood, so GUI and CLI behavior stay identical.
 * **Alert History:** A dedicated window (via the tray menu or the **History** button) listing every offline/recovery event with a timestamp, so you can see what happened even after the desktop popup is gone. Includes a **Clear History** option.
@@ -229,21 +237,23 @@ Example configuration:
 
 > **Note:** The background service watches this file continuously. Adding or removing nodes via the CLI immediately updates the background daemon without requiring a service restart.
 
-Offline/recovery alert history is stored separately at `~/.config/edi-alert-agent/history.json`, capped at the 200 most recent events.
+Offline/recovery alert history is stored separately at `~/.config/edi-alert-agent/history.json`, capped at the 200 most recent events. GUI theme preference lives in `~/.config/edi-alert-agent/settings.json`.
 
 ---
 
 ## Diagnostics & Troubleshooting
 
 * **`edi-agent: command not found`:** Ensure `~/.local/bin` is in your shell `$PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your `~/.bashrc`.
+* **`man edi-agent` not found:** `install.sh` copies the man page to `~/.local/share/man/man1/`. Most modern `man-db` setups pick this up automatically; if not, add `export MANPATH="$HOME/.local/share/man:$MANPATH"` to your `~/.bashrc`.
 * **Notifications Not Appearing:** Ensure `libnotify` is installed on your system (`sudo dnf install libnotify`) and test via `notify-send "Test" "Message"`.
-* **Inspect Service Logs:** Run `journalctl --user -u edi-alert-agent.service -f` to view live execution logs and ping outputs.
+* **Inspect Service Logs:** Run `journalctl --user -u edi-alert-agent.service -f` for systemd-level output, or check the application's own rotating log at `~/.local/state/edi-alert-agent/edi-agent.log` for CLI actions and node status transitions.
+* **Scripting against the CLI:** `edi-agent` exits `0` on success and `1` on any validation/operation failure (invalid IP, duplicate node, node not found, etc.), so `edi-agent add ... || echo "failed"` works as expected.
 
 ---
 
 ## Development & Testing
 
-Unit tests cover the CLI commands, config persistence, and reachability-check logic (mocked, so tests never touch the network or your real `nodes.json`):
+Unit tests cover the CLI commands, config persistence, GUI dialogs, and reachability-check logic (mocked, so tests never touch the network or your real `nodes.json`):
 
 ```bash
 source venv/bin/activate
@@ -251,11 +261,28 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
+A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the same suite on every push and pull request.
+
+---
+
+## Installing as a Package
+
+`install.sh` installs EDI Agent as an editable Python package (`pip install -e .`) rather than a hand-rolled script wrapper, which is what actually creates the `edi-agent` command:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+edi-agent list
+```
+
+See `man man/edi-agent-packaging.7` for what `pyproject.toml` is doing and why, if you're learning Python packaging alongside this project.
+
 ---
 
 ## Documentation
 
-* **Man page:** `man man/edi-agent.1` (or `man -l man/edi-agent.1` from anywhere) covers every CLI command and option.
+* **Man pages:** `man man/edi-agent.1` covers every CLI command and option; `man man/edi-agent-packaging.7` explains how the project is packaged. (Or `man -l <path>` from anywhere.)
 * **In-app manual:** `edi-agent help`, or the **`?`** button in the Dashboard.
 * **`CLAUDE.md`:** Project status, known gaps, and the roadmap of planned improvements — the working notes for anyone (human or AI) picking up development.
 

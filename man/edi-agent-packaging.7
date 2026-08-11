@@ -1,0 +1,178 @@
+.TH EDI-AGENT-PACKAGING 7 "2026" "EDI Agent 1.7.0" "Miscellaneous"
+.SH NAME
+edi-agent-packaging \- how EDI Agent is packaged, and how to package Python
+projects like it
+.SH DESCRIPTION
+This page explains how
+.B edi-agent
+went from "a couple of scripts run by hand" to a properly packaged Python
+project, as a worked example for future Python projects.
+.SH THE PROBLEM BEING SOLVED
+Before packaging was set up,
+.B install.sh
+worked by hand-writing a small bash wrapper at
+.IR ~/.local/bin/edi-agent :
+.RS
+.nf
+#!/bin/bash
+"$PROJECT_DIR/venv/bin/python" "$PROJECT_DIR/edi_agent.py" "$@"
+.fi
+.RE
+.PP
+This works, but it's fragile: nothing declares what version is installed,
+nothing declares the PySide6 dependency in a machine-readable way, and
+there's no distinction between "the code" and "an installed thing you can
+version, depend on, or eventually publish."
+.SH THE FIX: pyproject.toml
+Modern Python packaging is driven by a single
+.I pyproject.toml
+file at the project root. EDI Agent's looks like this (trimmed):
+.RS
+.nf
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edi-agent"
+dynamic = ["version"]
+dependencies = ["PySide6>=6.5.0"]
+
+[project.scripts]
+edi-agent = "edi_agent:main"
+
+[tool.setuptools]
+py-modules = ["edi_agent", "manual", "style"]
+
+[tool.setuptools.dynamic]
+version = { attr = "edi_agent.__version__" }
+.fi
+.RE
+.PP
+Three parts matter:
+.TP
+.B [project.scripts]
+This is what actually creates the
+.B edi-agent
+command. `edi-agent = "edi_agent:main"` means: install a console script
+named
+.BR edi-agent ,
+and have it call the
+.B main()
+function inside the
+.B edi_agent
+module. This is why
+.I edi_agent.py
+now has a real
+.B main()
+function instead of everything living under
+.BR "if __name__ == \(dq__main__\(dq:" .
+Any Python project that wants a CLI command needs exactly this shape:
+a callable function, referenced here.
+.TP
+.B [tool.setuptools] py-modules
+EDI Agent isn't a nested package (no
+.I edi_agent/__init__.py
+subdirectory) \(em it's three flat
+.I .py
+files at the repo root. `py-modules` tells setuptools to package those
+three files directly, instead of looking for a package directory. If a
+project already has an
+.I import-name/
+subdirectory with an
+.IR __init__.py ,
+use
+.B packages
+(or `packages = find:`) instead.
+.TP
+.B [tool.setuptools.dynamic] version
+Rather than duplicating the version number in both
+.I edi_agent.py
+and
+.IR pyproject.toml ,
+this tells setuptools to read
+.B __version__
+directly out of the module. One source of truth, bumped in exactly one
+place (still
+.I edi_agent.py
+itself).
+.SH THE INSTALL: EDITABLE MODE
+.B install.sh
+runs:
+.RS
+.nf
+pip install -e .
+.fi
+.RE
+.PP
+The
+.B \-e
+(editable) flag matters specifically for this project. EDI Agent loads its
+logo and
+.I manual.py
+using paths relative to its own source file
+.RI ( "Path(__file__).parent" ).
+A normal
+.RB "(non-editable) " "pip install"
+copies the module into
+.IR site-packages ,
+which would separate it from
+.I assets/
+and break that path resolution unless the data files were also bundled and
+the code updated to find them. An editable install instead leaves the code
+running from this checked-out directory and just adds an
+.B edi-agent
+entry-point script to the venv's
+.IR bin/ ,
+pointing back at it. That keeps the "load sibling files by relative path"
+design working with zero code changes.
+.PP
+The practical effect for
+.B install.sh
+is that instead of hand-writing the wrapper script above, it now does:
+.RS
+.nf
+"$PROJECT_DIR/venv/bin/pip" install -e "$PROJECT_DIR"
+ln -sf "$PROJECT_DIR/venv/bin/edi-agent" "$BIN_DIR/edi-agent"
+.fi
+.RE
+.PP
+.B pip
+generates the
+.I venv/bin/edi-agent
+script itself (from the
+.B [project.scripts]
+entry above); the install script just symlinks it onto
+.IR PATH .
+.SH TRYING IT YOURSELF
+From a fresh clone, without running the full installer:
+.RS
+.nf
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+edi-agent list
+.fi
+.RE
+.SH WHAT THIS DOES NOT COVER
+This setup makes EDI Agent installable from source with a real entry point
+and version metadata. It does
+.B not
+currently:
+.IP \(bu 3
+Publish to PyPI (would need a PyPI account, `python -m build`, and
+`twine upload` \(em straightforward to add later, deliberately not done
+since it requires credentials only the project owner can create).
+.IP \(bu 3
+Build a Fedora RPM or COPR package (a reasonable next step for a project
+this targeted at Fedora specifically).
+.IP \(bu 3
+Bundle a Flatpak (heavier lift, matters more if wider desktop distribution
+becomes a goal).
+.PP
+See
+.I CLAUDE.md
+in the repository root for the current state of these ideas.
+.SH SEE ALSO
+.BR edi-agent (1),
+the Python Packaging User Guide (packaging.python.org)

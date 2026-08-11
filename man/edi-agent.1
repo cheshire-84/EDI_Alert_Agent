@@ -1,4 +1,4 @@
-.TH EDI-AGENT 1 "2026" "EDI Agent 1.5.0" "User Commands"
+.TH EDI-AGENT 1 "2026" "EDI Agent 1.7.0" "User Commands"
 .SH NAME
 edi-agent \- lightweight LAN node monitoring daemon and tray application
 .SH SYNOPSIS
@@ -41,8 +41,9 @@ rather than just that the host answers pings.
 .TP
 .B \-\-interval \fISECONDS\fR
 How often this node is checked, independent of other nodes. Default
-30, minimum 5. The background daemon ticks every 30s, so this is the
-effective minimum granularity regardless of a smaller value.
+30, minimum 5. The background daemon reschedules itself dynamically
+around the shortest pending interval across all nodes, so this value
+is honored precisely rather than being rounded up to a fixed tick.
 .TP
 .B \-\-threshold \fICOUNT\fR
 Number of consecutive failed checks required before the node is
@@ -109,17 +110,30 @@ daemon \(em CLI changes apply without a service restart.
 .I ~/.config/edi-alert-agent/history.json
 The most recent 200 offline/recovery alert events.
 .TP
+.I ~/.config/edi-alert-agent/settings.json
+GUI preferences, currently just the selected theme (dark/light),
+toggled from the tray menu.
+.TP
+.I ~/.local/state/edi-alert-agent/edi-agent.log
+Rotating application log (1MB per file, 3 backups kept) covering CLI
+actions, node status transitions, and any errors reading the config
+or history files.
+.TP
 .I ~/.config/systemd/user/edi-alert-agent.service
 The systemd user unit that runs
 .B "edi-agent gui"
 in the background on login.
 .SH EXIT STATUS
-CLI subcommands do not currently set a distinct non-zero exit status
-on validation failure; check the printed
+.TP
+.B 0
+Success.
+.TP
+.B 1
+A CLI subcommand failed validation or its operation (invalid IP/port/
+interval/threshold, duplicate node without \fB\-\-force\fR, node not
+found, nothing to update, etc.). The printed
 .B [!]
-error message. This is a known gap \(em see the project's
-.I CLAUDE.md
-roadmap.
+message on stderr/stdout describes the specific failure.
 .SH EXAMPLES
 .PP
 Add a node checked by ICMP ping:
@@ -151,6 +165,10 @@ edi-agent history --limit 5
 .fi
 .RE
 .SH SEE ALSO
+.BR edi-agent-packaging (7)
+for how this project is packaged (pyproject.toml, editable installs,
+console-script entry points).
+.PP
 Full project documentation, including the GUI Dashboard, is in the
 repository's
 .I README.md

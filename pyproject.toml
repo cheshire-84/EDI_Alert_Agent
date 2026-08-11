@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edi-agent"
+dynamic = ["version"]
+description = "Lightweight LAN node monitoring daemon and tray application for Fedora KDE Plasma"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+dependencies = [
+    "PySide6>=6.5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+edi-agent = "edi_agent:main"
+
+[tool.setuptools]
+py-modules = ["edi_agent", "manual", "style"]
+
+[tool.setuptools.dynamic]
+version = { attr = "edi_agent.__version__" }

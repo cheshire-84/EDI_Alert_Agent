@@ -70,7 +70,8 @@ MANUAL_HTML = f"""
 
 <h3>Desktop UI & System Tray Features</h3>
 <ul>
-  <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the Dashboard, open this manual, send test alerts, or exit the agent.</li>
+  <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the Dashboard, open this manual, send test alerts, switch the theme, or exit the agent.</li>
+  <li><b>Dark / Light Theme:</b> Toggle from the tray menu at any time. The choice is saved and restored on the next launch. Defaults to dark.</li>
   <li><b>Infrastructure Dashboard:</b> Metric cards (Total Nodes, Online, Offline, Avg Latency) summarize fleet health at a glance above a sortable table (click any column header) &mdash; check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time per node.</li>
   <li><b>Add Node:</b> Click <b>Add</b> to register a new node &mdash; name, IP, optional TCP port, check interval, and alert threshold &mdash; without touching the terminal.</li>
   <li><b>Edit Node:</b> Double-click a row (or select it and click <b>Edit</b>) to change its IP, check method, interval, or threshold. Saving re-validates the node immediately.</li>
