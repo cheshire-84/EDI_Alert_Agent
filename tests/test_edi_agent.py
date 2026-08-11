@@ -1,5 +1,6 @@
 import sys
 import time
+import threading
 
 import pytest
 
@@ -739,3 +740,165 @@ def test_schedule_next_check_defaults_when_no_nodes(qapp):
     app = _make_bare_monitor_app(qapp)
     app.schedule_next_check()
     assert app.next_check_timer.interval() == edi_agent.DEFAULT_CHECK_INTERVAL * 1000
+
+
+# --- Discord webhook ---
+
+class _FakeWebhookResponse:
+    def __init__(self, status=204):
+        self.status = status
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        return False
+
+def test_is_valid_webhook_url():
+    assert edi_agent.is_valid_webhook_url("https://discord.com/api/webhooks/x") is True
+    assert edi_agent.is_valid_webhook_url("http://example.com/hook") is True
+    assert edi_agent.is_valid_webhook_url("not-a-url") is False
+
+def test_send_discord_webhook_noop_when_not_configured(monkeypatch):
+    called = {"n": 0}
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", lambda *a, **k: called.__setitem__("n", called["n"] + 1))
+    assert edi_agent.send_discord_webhook("hello") is False
+    assert called["n"] == 0
+
+def test_send_discord_webhook_success(monkeypatch):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", lambda req, timeout=5: _FakeWebhookResponse(204))
+    assert edi_agent.send_discord_webhook("hello") is True
+
+def test_send_discord_webhook_bad_status(monkeypatch):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", lambda req, timeout=5: _FakeWebhookResponse(500))
+    assert edi_agent.send_discord_webhook("hello") is False
+
+def test_send_discord_webhook_network_error(monkeypatch):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    def raise_err(req, timeout=5):
+        raise OSError("network down")
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", raise_err)
+    assert edi_agent.send_discord_webhook("hello") is False
+
+def test_send_discord_webhook_async_does_not_block(monkeypatch):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    release = threading.Event()
+    def slow_urlopen(req, timeout=5):
+        release.wait(timeout=2)
+        return _FakeWebhookResponse(204)
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", slow_urlopen)
+
+    start = time.time()
+    edi_agent.send_discord_webhook_async("hello")
+    elapsed = time.time() - start
+    release.set()  # let the background thread finish so it doesn't leak past the test
+
+    assert elapsed < 0.5  # must return immediately, not block on the network call
+
+def test_cli_webhook_set_valid_url():
+    assert edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x") is True
+    assert edi_agent.load_settings()["discord_webhook_url"] == "https://discord.com/api/webhooks/x"
+
+def test_cli_webhook_set_invalid_url(capsys):
+    assert edi_agent.cli_webhook_set("not-a-url") is False
+    assert "doesn't look like a valid URL" in capsys.readouterr().out
+    assert edi_agent.load_settings().get("discord_webhook_url") is None
+
+def test_cli_webhook_clear_when_set():
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    assert edi_agent.cli_webhook_clear() is True
+    assert edi_agent.load_settings().get("discord_webhook_url") is None
+
+def test_cli_webhook_clear_when_not_set(capsys):
+    assert edi_agent.cli_webhook_clear() is False
+    assert "No webhook" in capsys.readouterr().out
+
+def test_cli_webhook_test_without_configured(capsys):
+    assert edi_agent.cli_webhook_test() is False
+    assert "No webhook configured" in capsys.readouterr().out
+
+def test_cli_webhook_test_success(monkeypatch):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", lambda req, timeout=5: _FakeWebhookResponse(204))
+    assert edi_agent.cli_webhook_test() is True
+
+def test_cli_webhook_test_failure(capsys, monkeypatch):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", lambda req, timeout=5: _FakeWebhookResponse(500))
+    assert edi_agent.cli_webhook_test() is False
+    assert "Could not reach" in capsys.readouterr().out
+
+def test_main_webhook_set_dispatches(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["edi-agent", "webhook", "set", "https://discord.com/api/webhooks/x"])
+    edi_agent.main()
+    assert edi_agent.load_settings()["discord_webhook_url"] == "https://discord.com/api/webhooks/x"
+
+def test_main_webhook_no_action_exits_nonzero(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["edi-agent", "webhook"])
+    with pytest.raises(SystemExit) as exc_info:
+        edi_agent.main()
+    assert exc_info.value.code == 1
+
+def test_check_nodes_sends_webhook_on_offline_transition(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+
+    sent = []
+    monkeypatch.setattr(edi_agent, "send_discord_webhook_async", lambda msg: sent.append(msg))
+
+    app = _make_bare_monitor_app(qapp)
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
+    app.check_nodes(force=True)
+    app.check_nodes(force=True)
+
+    assert len(sent) == 1
+    assert "unreachable" in sent[0]
+
+def test_check_nodes_sends_webhook_on_recovery(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+
+    sent = []
+    monkeypatch.setattr(edi_agent, "send_discord_webhook_async", lambda msg: sent.append(msg))
+
+    app = _make_bare_monitor_app(qapp)
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
+    app.check_nodes(force=True)
+    app.check_nodes(force=True)
+
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    app.check_nodes(force=True)
+
+    assert len(sent) == 2
+    assert "back online" in sent[1]
+
+
+# --- WebhookDialog (GUI) ---
+
+def test_webhook_dialog_prefills_existing_url(qapp):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/existing")
+    dialog = edi_agent.WebhookDialog()
+    assert dialog.url_input.text() == "https://discord.com/api/webhooks/existing"
+
+def test_webhook_dialog_save(qapp):
+    dialog = edi_agent.WebhookDialog()
+    dialog.url_input.setText("https://discord.com/api/webhooks/new")
+    dialog.on_save()
+    assert edi_agent.load_settings()["discord_webhook_url"] == "https://discord.com/api/webhooks/new"
+    assert "Saved" in dialog.status_label.text()
+
+def test_webhook_dialog_clear(qapp):
+    edi_agent.cli_webhook_set("https://discord.com/api/webhooks/x")
+    dialog = edi_agent.WebhookDialog()
+    dialog.on_clear()
+    assert edi_agent.load_settings().get("discord_webhook_url") is None
+    assert dialog.url_input.text() == ""
+
+def test_webhook_dialog_test_sends(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent.urllib.request, "urlopen", lambda req, timeout=5: _FakeWebhookResponse(204))
+    dialog = edi_agent.WebhookDialog()
+    dialog.url_input.setText("https://discord.com/api/webhooks/x")
+    dialog.on_test()
+    assert "Test message sent" in dialog.status_label.text()

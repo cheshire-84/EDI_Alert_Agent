@@ -1,4 +1,4 @@
-.TH EDI-AGENT 1 "2026" "EDI Agent 1.7.0" "User Commands"
+.TH EDI-AGENT 1 "2026" "EDI Agent 1.8.0" "User Commands"
 .SH NAME
 edi-agent \- lightweight LAN node monitoring daemon and tray application
 .SH SYNOPSIS
@@ -91,6 +91,22 @@ working.
 Print the most recent offline/recovery events, newest first. Default
 limit 20. History is capped at 200 stored events.
 .TP
+.BI "webhook set " url
+Configure a Discord incoming webhook URL. Every offline/recovery alert
+is then POSTed there (as
+.BR "{\(dqcontent\(dq: \(dq...\(dq}" )
+in addition to the desktop popup, sent on a background thread so a
+slow or unreachable webhook never blocks the daemon. In Discord:
+channel Settings \(-> Integrations \(-> Webhooks \(-> New Webhook, then
+copy its URL.
+.TP
+.B webhook clear
+Remove the configured webhook. Alerts go back to desktop-only.
+.TP
+.B webhook test
+Send a test message to the configured webhook immediately, to confirm
+it works.
+.TP
 .B help
 Open the interactive PySide6 manual window
 .RI ( manual.py ).
@@ -111,8 +127,9 @@ daemon \(em CLI changes apply without a service restart.
 The most recent 200 offline/recovery alert events.
 .TP
 .I ~/.config/edi-alert-agent/settings.json
-GUI preferences, currently just the selected theme (dark/light),
-toggled from the tray menu.
+GUI/alert preferences: the selected theme (dark/light) and the
+configured Discord webhook URL, if any. Never printed back out by any
+command and never written to the log file.
 .TP
 .I ~/.local/state/edi-alert-agent/edi-agent.log
 Rotating application log (1MB per file, 3 backups kept) covering CLI
@@ -162,6 +179,14 @@ Review the last 5 alerts:
 .RS
 .nf
 edi-agent history --limit 5
+.fi
+.RE
+.PP
+Mirror alerts to Discord:
+.RS
+.nf
+edi-agent webhook set https://discord.com/api/webhooks/XXXXXXXXXXXX/XXXXXXXX
+edi-agent webhook test
 .fi
 .RE
 .SH SEE ALSO

@@ -61,6 +61,13 @@ MANUAL_HTML = f"""
       <code>edi-agent history [--limit N]</code><br>
       Shows the most recent offline/recovery events (default 20), newest first.</li>
       <br>
+  <li><b>Configure Discord Alerts:</b><br>
+      <code>edi-agent webhook set &lt;url&gt;</code> / <code>clear</code> / <code>test</code><br>
+      <i>Example:</i> <code>edi-agent webhook set https://discord.com/api/webhooks/...</code><br>
+      Mirrors offline/recovery alerts to a Discord channel via an incoming webhook, in
+      addition to the desktop popup. <code>test</code> sends a message immediately to confirm
+      it works. The webhook URL is never printed back out or written to the log file.</li>
+      <br>
   <li><b>Open Manual / Help:</b><br>
       <code>edi-agent help</code><br>
       Opens this interactive manual window.</li>
@@ -70,7 +77,8 @@ MANUAL_HTML = f"""
 
 <h3>Desktop UI & System Tray Features</h3>
 <ul>
-  <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the Dashboard, open this manual, send test alerts, switch the theme, or exit the agent.</li>
+  <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the Dashboard, open this manual, send test alerts, configure Discord alerts, switch the theme, or exit the agent.</li>
+  <li><b>Discord Webhook Dialog:</b> Paste a Discord incoming webhook URL, save it, and send a test message &mdash; all from the tray menu, no terminal needed. Clearing the field and saving removes it again.</li>
   <li><b>Dark / Light Theme:</b> Toggle from the tray menu at any time. The choice is saved and restored on the next launch. Defaults to dark.</li>
   <li><b>Infrastructure Dashboard:</b> Metric cards (Total Nodes, Online, Offline, Avg Latency) summarize fleet health at a glance above a sortable table (click any column header) &mdash; check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time per node.</li>
   <li><b>Add Node:</b> Click <b>Add</b> to register a new node &mdash; name, IP, optional TCP port, check interval, and alert threshold &mdash; without touching the terminal.</li>

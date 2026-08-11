@@ -1,12 +1,12 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.7.0)</h1>
+  <h1>EDI Agent (v1.8.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
 **EDI Agent** is a lightweight, background LAN node monitoring daemon and desktop application built specifically for **Fedora KDE Plasma** (and Qt/systemd-based Linux desktops). 
 
-It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web applications, databases, etc.) using non-intrusive ICMP pings — or an optional TCP port check to verify a specific service is actually running, not just that the host is reachable — and delivers native desktop notification popups over DBus whenever a node drops offline or recovers.
+It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web applications, databases, etc.) using non-intrusive ICMP pings — or an optional TCP port check to verify a specific service is actually running, not just that the host is reachable — and delivers native desktop notification popups over DBus whenever a node drops offline or recovers. Alerts can also be mirrored to a Discord channel via webhook, for when you're not sitting at this desktop.
 
 ---
 
@@ -23,6 +23,7 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 * **Built-In Interactive Manual:** Includes a standalone documentation GUI (`manual.py`) accessible via terminal command (`edi-agent help`) or the header **`?`** button in the UI.
 * **Systemd User Service:** Runs silently in the background as an unprivileged user daemon that automatically starts on boot.
 * **Rotating Application Log:** CLI actions, node status transitions, and any config/history read errors are logged to `~/.local/state/edi-alert-agent/edi-agent.log` (1MB × 3 backups), independent of `journalctl`.
+* **Discord Webhook Alerts:** Mirror every offline/recovery alert to a Discord channel, in addition to the desktop popup — configure from the tray menu or `edi-agent webhook set <url>`. Sent on a background thread so a slow or unreachable webhook can never freeze the tray UI.
 
 ---
 
@@ -140,6 +141,7 @@ Once installed, the `edi-agent` command can be called from any terminal prompt a
 | **List Nodes** | `edi-agent list` | Displays a table of all tracked nodes, their check method (ping or TCP port), status, failures/threshold, check interval, latency, and when they were last checked. |
 | **Test Alert** | `edi-agent test` | Triggers a test desktop popup notification over DBus. |
 | **Alert History** | `edi-agent history [--limit N]` | Shows the most recent offline/recovery events (default 20), newest first. |
+| **Webhook** | `edi-agent webhook set <url>` \| `clear` \| `test` | Configures a Discord webhook to mirror offline/recovery alerts. `test` sends a message immediately to confirm it works. |
 | **Open Help** | `edi-agent help` | Opens the interactive PySide6 manual window. |
 | **Run GUI** | `edi-agent gui` | Launches background tray app directly (used by systemd). |
 
@@ -176,6 +178,11 @@ edi-agent test
 # See the last 20 offline/recovery events
 edi-agent history
 
+# Mirror alerts to a Discord channel
+edi-agent webhook set https://discord.com/api/webhooks/XXXXXXXXXXXX/XXXXXXXX
+edi-agent webhook test
+edi-agent webhook clear
+
 # Open built-in interactive manual
 edi-agent help
 ```
@@ -184,11 +191,12 @@ edi-agent help
 
 ## Graphical Interface & System Tray
 
-* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the Dashboard, open the manual, trigger a test notification, switch the theme, or quit the application.
+* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the Dashboard, open the manual, trigger a test notification, configure Discord alerts, switch the theme, or quit the application.
 * **Dark / Light Theme:** Toggle from the tray menu at any time; the choice persists across restarts. Defaults to dark.
 * **Infrastructure Dashboard:** The main GUI window. A summary row of metric cards (Total Nodes, Online, Offline, Avg Latency) sits above a sortable table (click any column header) of every registered host — check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time.
 * **Add / Edit / Delete Nodes:** The GUI is no longer read-mostly — **Add**, **Edit**, and **Delete** buttons (plus double-click any row to edit) cover full node lifecycle management without touching a terminal. All three go through the same validated CLI functions under the hood, so GUI and CLI behavior stay identical.
 * **Alert History:** A dedicated window (via the tray menu or the **History** button) listing every offline/recovery event with a timestamp, so you can see what happened even after the desktop popup is gone. Includes a **Clear History** option.
+* **Discord Webhook Dialog:** From the tray menu, paste a Discord incoming webhook URL, save it, and send a test message — no terminal required. The same dialog can clear the webhook to go back to desktop-only alerts.
 * **Refresh Now:** Forces an on-demand check of every registered host, bypassing each node's own check interval.
 * **Help (`?`) Button:** Click the circular **`?`** button in the top-right of the Dashboard to pop open the interactive user manual.
 
@@ -237,7 +245,7 @@ Example configuration:
 
 > **Note:** The background service watches this file continuously. Adding or removing nodes via the CLI immediately updates the background daemon without requiring a service restart.
 
-Offline/recovery alert history is stored separately at `~/.config/edi-alert-agent/history.json`, capped at the 200 most recent events. GUI theme preference lives in `~/.config/edi-alert-agent/settings.json`.
+Offline/recovery alert history is stored separately at `~/.config/edi-alert-agent/history.json`, capped at the 200 most recent events. GUI theme and the Discord webhook URL live in `~/.config/edi-alert-agent/settings.json` — e.g. `{"theme": "dark", "discord_webhook_url": "https://discord.com/api/webhooks/..."}`. To create a webhook URL: in Discord, go to a channel's **Settings → Integrations → Webhooks → New Webhook**, then copy its URL.
 
 ---
 
@@ -247,6 +255,7 @@ Offline/recovery alert history is stored separately at `~/.config/edi-alert-agen
 * **`man edi-agent` not found:** `install.sh` copies the man page to `~/.local/share/man/man1/`. Most modern `man-db` setups pick this up automatically; if not, add `export MANPATH="$HOME/.local/share/man:$MANPATH"` to your `~/.bashrc`.
 * **Notifications Not Appearing:** Ensure `libnotify` is installed on your system (`sudo dnf install libnotify`) and test via `notify-send "Test" "Message"`.
 * **Inspect Service Logs:** Run `journalctl --user -u edi-alert-agent.service -f` for systemd-level output, or check the application's own rotating log at `~/.local/state/edi-alert-agent/edi-agent.log` for CLI actions and node status transitions.
+* **Discord Alerts Not Arriving:** Run `edi-agent webhook test` — it prints success/failure directly. Failures (bad URL, network issue, Discord returning a non-2xx status) are also logged to `edi-agent.log`. The webhook URL itself is never written to the log, only whether the send succeeded.
 * **Scripting against the CLI:** `edi-agent` exits `0` on success and `1` on any validation/operation failure (invalid IP, duplicate node, node not found, etc.), so `edi-agent add ... || echo "failed"` works as expected.
 
 ---

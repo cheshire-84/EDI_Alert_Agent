@@ -40,7 +40,7 @@ stylesheets), `pyproject.toml` (packaging), `install.sh` / `uninstall.sh`,
   nontrivial forwarding setup. That kind of testing still has to happen
   on the real host, as it has all along.
 
-## Status: shipped (v1.0.0 → v1.7.0)
+## Status: shipped (v1.0.0 → v1.8.0)
 
 - **v1.0.1** — concurrent pinging (fixed UI-freezing sequential loop), IP
   validation, duplicate-node protection, `nodes.json` file locking,
@@ -70,6 +70,11 @@ stylesheets), `pyproject.toml` (packaging), `install.sh` / `uninstall.sh`,
   with a real `edi-agent` entry point, man page installed by `install.sh`,
   and a GitHub Actions CI workflow. Details in this version's Changelog
   Checklist entry.
+- **v1.8.0** — Discord webhook alerts: `edi-agent webhook set/clear/test`,
+  a matching tray-menu `WebhookDialog`, and `send_discord_webhook_async()`
+  wired into both offline and recovery transitions in `check_nodes()`.
+  First piece of the direction set this session (see Roadmap below) — web
+  UI is next.
 
 ## How the adaptive scheduler works (v1.7.0)
 
@@ -93,7 +98,31 @@ changelog is the record of what happened and why it mattered.
 
 ## Roadmap / ideas
 
-Not prioritized — pull from here when picking the next task.
+**Direction decided 2026-08-11**: the project has outgrown "just a desktop
+tray notifier" and the owner explicitly chose where to expand next, in
+this order:
+
+1. **Discord/webhook alerts** — shipped in v1.8.0. Small, additive, didn't
+   touch existing architecture.
+2. **Web UI** — next up now that webhooks have landed. A local read-only
+   status page for checking fleet health from a phone/other machine on the
+   LAN. Bigger lift: new server component, new questions about who can
+   reach it (auth? LAN-only bind?) — needs its own planning pass, not to
+   be bolted on casually.
+3. **Cross-platform desktop support (Windows/Mac)** — explicitly deferred
+   to "next release," i.e. after 1 and 2. Important context for whoever
+   picks this up: it does **not** require a rewrite. Qt/PySide6 already
+   has cross-platform tray + notification APIs; the actual Linux-only
+   parts are narrow — the `ping` command's flags (`-c`/`-W` vs `-n`/`-w`),
+   `notify-send` (Linux-only, needs a Qt-native or `plyer`-style
+   alternative), and the systemd user service (Linux-only, needs a
+   Windows Task Scheduler / macOS launchd equivalent). Containerizing the
+   *app itself* was considered and rejected — the tray icon needs a real
+   desktop session (X11/Wayland + DBus + a StatusNotifier host) that a
+   bare container doesn't have.
+
+Below this, other ideas remain unprioritized — pull from here once 1-3
+above are settled.
 
 - [ ] Search/filter box in the Dashboard table (matters once fleets grow
       past a screenful)
@@ -114,9 +143,6 @@ Not prioritized — pull from here when picking the next task.
       groundwork is in place; see `man/edi-agent-packaging.7`) — needs
       the project owner's own PyPI/COPR credentials, not something to set
       up unilaterally
-- [ ] Consider a read-only local web status page (Flask/FastAPI) for
-      checking fleet health from a phone on the same LAN — bigger lift,
-      only worth it if remote visibility becomes a real want
 - [ ] `edi-agent list`/`history` could gain `--json` output for scripting,
       now that exit codes make the CLI more script-friendly generally
 
@@ -138,6 +164,28 @@ docs, or tests — check off what actually happened so this file stays a
 reliable record. Newest entry on top. Keep entries short: what changed,
 not why (the "why" belongs in this file's other sections if it's still
 relevant, or is just obvious from the diff).
+
+### 2026-08-11 (3) — v1.8.0: Discord webhook alerts
+
+- [x] Added — `send_discord_webhook()` (blocking POST, testable directly)
+      and `send_discord_webhook_async()` (fire-and-forget wrapper used by
+      the daemon so a slow/unreachable webhook can't freeze the tray UI —
+      caught this exact bug before shipping, see the function's docstring)
+- [x] Added — `edi-agent webhook set/clear/test` CLI subcommand
+- [x] Added — GUI `WebhookDialog` (Save/Clear/Send Test) + tray menu entry
+      "Discord Webhook..."
+- [x] Added — `discord_webhook_url` in `settings.json`; never printed back
+      out or written to the log file (only success/failure is logged)
+- [x] Added — 22 new tests (110 total), all network calls mocked — no
+      real requests to Discord or anywhere else during test runs
+- [x] Updated — README (Key Features, CLI table/examples, GUI section,
+      Configuration Storage, Diagnostics), `man/edi-agent.1` (webhook
+      subcommands, settings.json FILES entry, an example), `manual.py`
+      (tray section, new CLI command entry)
+- [x] Updated — roadmap: webhook alerts marked shipped; web UI is next
+- Verified live against a local mock HTTP server (not the real Discord
+  API) — confirmed the actual JSON payload format and a 0 exit code;
+  real `nodes.json`/`settings.json` checked untouched afterward
 
 ### 2026-08-11 (2) — Documented available local testing environment
 

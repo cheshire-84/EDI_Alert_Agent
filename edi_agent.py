@@ -7,8 +7,10 @@ import fcntl
 import socket
 import logging
 import ipaddress
+import threading
 import subprocess
 import argparse
+import urllib.request
 import concurrent.futures
 from pathlib import Path
 from datetime import datetime
@@ -34,7 +36,7 @@ from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
 from style import DARK_GLASS_STYLE, LIGHT_GLASS_STYLE
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
@@ -158,6 +160,76 @@ def save_settings(settings):
 
 def get_theme_stylesheet(theme):
     return LIGHT_GLASS_STYLE if theme == "light" else DARK_GLASS_STYLE
+
+
+def is_valid_webhook_url(url):
+    return url.startswith("http://") or url.startswith("https://")
+
+
+def send_discord_webhook(message):
+    """POSTs to the configured Discord webhook. Never raises - failures are
+    logged and reported back as False so a broken webhook can't take down
+    the daemon's own alerting."""
+    url = load_settings().get("discord_webhook_url")
+    if not url:
+        return False
+    try:
+        payload = json.dumps({"content": message}).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if not (200 <= resp.status < 300):
+                get_logger().warning(f"webhook: unexpected response status {resp.status}")
+                return False
+            return True
+    except Exception as exc:
+        get_logger().warning(f"webhook: failed to send: {exc}")
+        return False
+
+
+def send_discord_webhook_async(message):
+    """Fire-and-forget wrapper for the GUI daemon: send_discord_webhook()
+    itself blocks on a network call, and calling it directly from
+    check_nodes() would freeze the Qt main thread exactly like the
+    pre-v1.0.1 sequential-ping bug this project already fixed once."""
+    threading.Thread(target=send_discord_webhook, args=(message,), daemon=True).start()
+
+
+def cli_webhook_set(url):
+    if not is_valid_webhook_url(url):
+        print(f"[!] '{url}' doesn't look like a valid URL (must start with http:// or https://).")
+        return False
+    settings = load_settings()
+    settings["discord_webhook_url"] = url
+    save_settings(settings)
+    print("[+] Discord webhook configured.")
+    get_logger().info("webhook: configured")
+    return True
+
+
+def cli_webhook_clear():
+    settings = load_settings()
+    if not settings.get("discord_webhook_url"):
+        print("[!] No webhook is currently configured.")
+        return False
+    settings["discord_webhook_url"] = None
+    save_settings(settings)
+    print("[-] Webhook removed.")
+    get_logger().info("webhook: removed")
+    return True
+
+
+def cli_webhook_test():
+    if not load_settings().get("discord_webhook_url"):
+        print("[!] No webhook configured. Use 'edi-agent webhook set <url>' first.")
+        return False
+    print("[?] Sending test message to webhook...", end=" ", flush=True)
+    ok = send_discord_webhook(f"EDI Agent (v{__version__}): Test message. Webhook alerts are working.")
+    print("Done!" if ok else "Failed.")
+    if not ok:
+        print("[!] Could not reach the webhook URL. Check the URL and your network.")
+    return ok
 
 
 def is_valid_ip(ip):
@@ -682,6 +754,78 @@ class AddNodeDialog(QDialog):
         self.accept()
 
 
+class WebhookDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Discord Webhook Alerts")
+        self.resize(440, 180)
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        info = QLabel(
+            "Send the same offline/recovery alerts to a Discord channel via "
+            "an incoming webhook, alongside the desktop popup."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        url_row = QHBoxLayout()
+        url_row.addWidget(QLabel("Webhook URL:"))
+        self.url_input = QLineEdit(load_settings().get("discord_webhook_url") or "")
+        self.url_input.setPlaceholderText("https://discord.com/api/webhooks/...")
+        url_row.addWidget(self.url_input)
+        layout.addLayout(url_row)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        btn_row = QHBoxLayout()
+        clear_btn = QPushButton("Clear")
+        clear_btn.clicked.connect(self.on_clear)
+        test_btn = QPushButton("Send Test")
+        test_btn.clicked.connect(self.on_test)
+        save_btn = QPushButton("Save")
+        save_btn.setObjectName("PrimaryButton")
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self.on_save)
+        btn_row.addWidget(clear_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(test_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+    def on_save(self):
+        url = self.url_input.text().strip()
+        if not url:
+            self.status_label.setText("Enter a webhook URL, or use Clear to remove it.")
+            return
+        if cli_webhook_set(url):
+            self.status_label.setText("Saved.")
+        else:
+            self.status_label.setText("That doesn't look like a valid URL (must start with http:// or https://).")
+
+    def on_clear(self):
+        self.url_input.setText("")
+        cli_webhook_clear()
+        self.status_label.setText("Webhook removed.")
+
+    def on_test(self):
+        url = self.url_input.text().strip()
+        if not url:
+            self.status_label.setText("Enter a webhook URL first.")
+            return
+        cli_webhook_set(url)
+        if cli_webhook_test():
+            self.status_label.setText("Test message sent — check Discord.")
+        else:
+            self.status_label.setText("Failed to send. Check the URL and your network.")
+
+
 class HistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1063,6 +1207,8 @@ class MonitorApp:
         self.help_action.triggered.connect(open_manual_window)
         self.test_action = self.menu.addAction("Send Test Alert")
         self.test_action.triggered.connect(self.trigger_test_alert)
+        self.webhook_action = self.menu.addAction("Discord Webhook...")
+        self.webhook_action.triggered.connect(self.show_webhook_dialog)
         self.theme_action = self.menu.addAction(self._theme_action_label())
         self.theme_action.triggered.connect(self.toggle_theme)
         self.quit_action = self.menu.addAction("Quit Agent")
@@ -1132,6 +1278,7 @@ class MonitorApp:
                         )
                         record_history_event(name, "offline", message)
                         get_logger().warning(f"'{name}' ({ip}) marked OFFLINE after {failures} failures")
+                        send_discord_webhook_async(message)
                 else:
                     info["failures"] = 0
                     if prev_status != "online":
@@ -1146,6 +1293,7 @@ class MonitorApp:
                             )
                             record_history_event(name, "online", message)
                             get_logger().info(f"'{name}' ({ip}) back ONLINE")
+                            send_discord_webhook_async(message)
             save_config(cfg)
         self.refresh_tray_icon(cfg)
         if self.dialog and self.dialog.isVisible():
@@ -1204,6 +1352,10 @@ class MonitorApp:
         dialog = HistoryDialog()
         dialog.exec()
 
+    def show_webhook_dialog(self):
+        dialog = WebhookDialog()
+        dialog.exec()
+
     def run(self):
         sys.exit(self.app.exec())
 
@@ -1260,6 +1412,15 @@ def build_arg_parser():
         "--limit", type=int, default=20, help="Number of events to show"
     )
 
+    webhook_parser = subparsers.add_parser(
+        "webhook", help="Configure a Discord webhook for offline/recovery alerts"
+    )
+    webhook_sub = webhook_parser.add_subparsers(dest="webhook_action")
+    webhook_set_parser = webhook_sub.add_parser("set", help="Set the webhook URL")
+    webhook_set_parser.add_argument("url")
+    webhook_sub.add_parser("clear", help="Remove the configured webhook")
+    webhook_sub.add_parser("test", help="Send a test message to the configured webhook")
+
     subparsers.add_parser("help", help="Open manual window")
     subparsers.add_parser("gui", help="Run system tray monitor agent")
     return parser
@@ -1294,6 +1455,16 @@ def main():
         success = cli_test()
     elif args.command == "history":
         success = cli_history(limit=args.limit)
+    elif args.command == "webhook":
+        if args.webhook_action == "set":
+            success = cli_webhook_set(args.url)
+        elif args.webhook_action == "clear":
+            success = cli_webhook_clear()
+        elif args.webhook_action == "test":
+            success = cli_webhook_test()
+        else:
+            print("[!] Specify a webhook action: set <url>, clear, or test.")
+            success = False
     elif args.command == "help":
         success = open_manual_window()
     else:
