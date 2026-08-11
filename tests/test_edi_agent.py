@@ -527,3 +527,109 @@ def test_edit_dialog_saves_custom_threshold(qapp, monkeypatch):
 
     node = edi_agent.load_config()["nodes"]["web"]
     assert node["failure_threshold"] == 5
+
+
+# --- AddNodeDialog (GUI) ---
+
+def test_add_dialog_creates_node(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+
+    dialog = edi_agent.AddNodeDialog()
+    dialog.name_input.setText("plex")
+    dialog.ip_input.setText("10.0.0.5")
+    dialog.port_input.setText("32400")
+    dialog.on_save()
+
+    node = edi_agent.load_config()["nodes"]["plex"]
+    assert node["ip"] == "10.0.0.5"
+    assert node["port"] == 32400
+
+def test_add_dialog_rejects_blank_name(qapp):
+    dialog = edi_agent.AddNodeDialog()
+    dialog.ip_input.setText("10.0.0.5")
+    dialog.on_save()
+    assert "cannot be blank" in dialog.error_label.text()
+    assert edi_agent.load_config()["nodes"] == {}
+
+def test_add_dialog_rejects_duplicate_name(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.AddNodeDialog()
+    dialog.name_input.setText("web")
+    dialog.ip_input.setText("10.0.0.2")
+    dialog.on_save()
+
+    assert "already exists" in dialog.error_label.text()
+    assert edi_agent.load_config()["nodes"]["web"]["ip"] == "10.0.0.1"
+
+def test_add_dialog_rejects_invalid_ip(qapp):
+    dialog = edi_agent.AddNodeDialog()
+    dialog.name_input.setText("web")
+    dialog.ip_input.setText("not-an-ip")
+    dialog.on_save()
+    assert "not a valid IP" in dialog.error_label.text()
+    assert edi_agent.load_config()["nodes"] == {}
+
+def test_add_dialog_defaults_interval_and_threshold(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+
+    dialog = edi_agent.AddNodeDialog()
+    dialog.name_input.setText("web")
+    dialog.ip_input.setText("10.0.0.1")
+    dialog.on_save()
+
+    node = edi_agent.load_config()["nodes"]["web"]
+    assert node["check_interval"] == edi_agent.DEFAULT_CHECK_INTERVAL
+    assert node["failure_threshold"] == edi_agent.DEFAULT_FAILURE_THRESHOLD
+
+
+# --- NodeManagerDialog delete flow (GUI) ---
+
+def test_delete_selected_removes_node_on_confirm(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.NodeManagerDialog()
+    dialog.table.selectRow(0)
+    monkeypatch.setattr(edi_agent.QMessageBox, "question", lambda *a, **k: edi_agent.QMessageBox.Yes)
+    dialog.delete_selected()
+
+    assert "web" not in edi_agent.load_config()["nodes"]
+    assert dialog.table.rowCount() == 0
+
+def test_delete_selected_keeps_node_on_cancel(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.NodeManagerDialog()
+    dialog.table.selectRow(0)
+    monkeypatch.setattr(edi_agent.QMessageBox, "question", lambda *a, **k: edi_agent.QMessageBox.No)
+    dialog.delete_selected()
+
+    assert "web" in edi_agent.load_config()["nodes"]
+
+def test_delete_selected_no_row_selected_is_noop(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 1.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+
+    dialog = edi_agent.NodeManagerDialog()
+    dialog.table.clearSelection()
+    dialog.table.setCurrentCell(-1, -1)
+    dialog.delete_selected()
+
+    assert "web" in edi_agent.load_config()["nodes"]
+
+
+# --- NodeManagerDialog metric cards ---
+
+def test_metric_cards_reflect_node_counts(qapp, monkeypatch):
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (True, 5.0))
+    edi_agent.cli_add("web", "10.0.0.1")
+    monkeypatch.setattr(edi_agent, "check_target", lambda ip, port=None: (False, None))
+    edi_agent.cli_add("db", "10.0.0.2")
+
+    dialog = edi_agent.NodeManagerDialog()
+    assert dialog.card_total.findChild(edi_agent.QLabel, "Val_TotalNodes").text() == "2"
+    assert dialog.card_online.findChild(edi_agent.QLabel, "Val_Online").text() == "1"
+    assert dialog.card_offline.findChild(edi_agent.QLabel, "Val_Offline").text() == "1"

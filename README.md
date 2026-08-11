@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/app_logo.png" alt="EDI Agent Logo" width="128" />
-  <h1>EDI Agent (v1.5.0)</h1>
+  <h1>EDI Agent (v1.6.0)</h1>
   <p>Lightweight LAN Node Monitoring Daemon for Fedora KDE Plasma</p>
 </div>
 
@@ -17,7 +17,7 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 * **Per-Node Check Interval & Alert Threshold:** Override the default 30s check interval or 2-strike alert threshold on any individual node — e.g. check a flaky IoT device every 5 minutes, or alert instantly on a critical database.
 * **Optional Service-Level Port Checks:** Monitor a specific TCP port instead of ICMP (e.g. `5432` for PostgreSQL, `32400` for Plex, `8006` for Proxmox) to confirm the actual service is up, not just the host.
 * **Configurable Failure Threshold:** Requires 2 consecutive failed checks (by default) before triggering a critical desktop popup, to prevent false alarms over Wi-Fi. Adjustable per node.
-* **Unified CLI & GUI:** Full control from any terminal (`edi-agent`) alongside a tray-docked GUI featuring real-time refresh capability.
+* **Unified CLI & GUI:** Add, edit, and delete nodes from either the terminal (`edi-agent`) or the tray-docked GUI Dashboard — both operate on the same registry, so the two stay interchangeable.
 * **Instant Reachability Validation:** Automatically tests host reachability immediately when adding new nodes via the CLI.
 * **Built-In Interactive Manual:** Includes a standalone documentation GUI (`manual.py`) accessible via terminal command (`edi-agent help`) or the header **`?`** button in the UI.
 * **Systemd User Service:** Runs silently in the background as an unprivileged user daemon that automatically starts on boot.
@@ -30,17 +30,21 @@ It periodically monitors local infrastructure nodes (Proxmox, Plex, internal web
 EDI_Alert_Agent/
 ├── assets/
 │   └── app_logo.png     # Application branding icon (Tray, Window Header, Notifications)
+├── man/
+│   └── edi-agent.1      # Man page (view with `man man/edi-agent.1`)
 ├── tests/
-│   └── test_edi_agent.py  # pytest unit tests for CLI, config, and check logic
+│   └── test_edi_agent.py  # pytest unit tests for CLI, config, GUI dialogs, and check logic
+├── CLAUDE.md             # Project status, roadmap, and per-session change log
 ├── conftest.py          # Shared pytest fixtures (isolates tests from your real config)
-├── edi_agent.py         # Core monitoring daemon & tray application logic
+├── edi_agent.py         # Core monitoring daemon, CLI, and tray/GUI application logic
 ├── install.sh           # One-click automated setup & systemd service installer
 ├── uninstall.sh         # Removes the service, CLI wrapper, and venv
 ├── LICENSE              # Open-source MIT License
 ├── manual.py            # Interactive PySide6 Help & User Manual window
 ├── README.md            # Project documentation
 ├── requirements.txt     # Python dependency manifest (PySide6)
-└── requirements-dev.txt # Adds pytest for running the test suite
+├── requirements-dev.txt # Adds pytest for running the test suite
+└── style.py              # Qt dark-glass stylesheet shared by the GUI
 ```
 
 ---
@@ -173,12 +177,12 @@ edi-agent help
 
 ## Graphical Interface & System Tray
 
-* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the status window, open the manual, trigger a test notification, or quit the application.
-* **Status Window:** Displays all registered hosts in a clean, sortable table (click any column header) with color-coded status badges (**GREEN** for `ONLINE`, **RED** for `OFFLINE`), the check method (ping or TCP port), failures/threshold, check interval, latency, and last-checked time per node.
-* **Edit Node:** Double-click any row (or select it and click **Edit Selected**) to change a node's IP or check method without dropping to the terminal. Re-validates the node as soon as you save.
-* **Alert History:** A dedicated window (via the tray menu or the **Alert History** button in the Status Window) listing every offline/recovery event with a timestamp, so you can see what happened even after the desktop popup is gone. Includes a **Clear History** option.
-* **Refresh / Check Now:** Forces an on-demand re-ping of all registered hosts.
-* **Help (`?`) Button:** Click the **`?`** button in the top-right header of the status window to pop open the interactive user manual.
+* **System Tray Dock:** Sits by the system clock with custom branding. The icon shows a **GREEN** badge when every node is online and a **RED** badge if any node is down, with a tooltip summarizing fleet health. Right-clicking the tray icon opens the context menu to launch the Dashboard, open the manual, trigger a test notification, or quit the application.
+* **Infrastructure Dashboard:** The main GUI window. A summary row of metric cards (Total Nodes, Online, Offline, Avg Latency) sits above a sortable table (click any column header) of every registered host — check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time.
+* **Add / Edit / Delete Nodes:** The GUI is no longer read-mostly — **Add**, **Edit**, and **Delete** buttons (plus double-click any row to edit) cover full node lifecycle management without touching a terminal. All three go through the same validated CLI functions under the hood, so GUI and CLI behavior stay identical.
+* **Alert History:** A dedicated window (via the tray menu or the **History** button) listing every offline/recovery event with a timestamp, so you can see what happened even after the desktop popup is gone. Includes a **Clear History** option.
+* **Refresh Now:** Forces an on-demand check of every registered host, bypassing each node's own check interval.
+* **Help (`?`) Button:** Click the circular **`?`** button in the top-right of the Dashboard to pop open the interactive user manual.
 
 ---
 
@@ -246,6 +250,14 @@ source venv/bin/activate
 pip install -r requirements-dev.txt
 pytest
 ```
+
+---
+
+## Documentation
+
+* **Man page:** `man man/edi-agent.1` (or `man -l man/edi-agent.1` from anywhere) covers every CLI command and option.
+* **In-app manual:** `edi-agent help`, or the **`?`** button in the Dashboard.
+* **`CLAUDE.md`:** Project status, known gaps, and the roadmap of planned improvements — the working notes for anyone (human or AI) picking up development.
 
 ---
 

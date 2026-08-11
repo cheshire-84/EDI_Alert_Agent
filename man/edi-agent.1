@@ -1,0 +1,160 @@
+.TH EDI-AGENT 1 "2026" "EDI Agent 1.5.0" "User Commands"
+.SH NAME
+edi-agent \- lightweight LAN node monitoring daemon and tray application
+.SH SYNOPSIS
+.B edi-agent
+.I command
+[\fIARGS\fR] [\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B edi-agent
+is a background LAN node monitoring daemon and PySide6 system tray
+application for Fedora KDE Plasma (and other Qt/systemd-based Linux
+desktops). It periodically checks local infrastructure nodes \(em
+Proxmox hosts, Plex servers, internal web applications, databases,
+and so on \(em either with a plain ICMP ping or a TCP port connect,
+and raises a native desktop notification whenever a node's status
+changes.
+.PP
+Running
+.B edi-agent
+with no arguments (or the
+.B gui
+command) launches the background tray daemon. All other invocations
+are one-shot CLI operations against the shared node registry at
+.IR ~/.config/edi-alert-agent/nodes.json .
+.SH COMMANDS
+.TP
+.BI "add " name " " ip " [OPTIONS]"
+Register a new node. Performs an immediate reachability check before
+saving. Fails if
+.I name
+already exists unless
+.B \-\-force
+is given.
+.RS
+.TP
+.B \-\-port \fIPORT\fR
+Check this TCP port (a real connect handshake) instead of ICMP ping.
+Useful for confirming a specific service is actually running \(em
+e.g. 5432 for PostgreSQL, 32400 for Plex, 8006 for Proxmox \(em
+rather than just that the host answers pings.
+.TP
+.B \-\-interval \fISECONDS\fR
+How often this node is checked, independent of other nodes. Default
+30, minimum 5. The background daemon ticks every 30s, so this is the
+effective minimum granularity regardless of a smaller value.
+.TP
+.B \-\-threshold \fICOUNT\fR
+Number of consecutive failed checks required before the node is
+marked offline and a critical alert is raised. Default 2 (guards
+against a single flaky check over Wi-Fi).
+.TP
+.B \-\-force
+Overwrite an existing node with the same name instead of refusing.
+.RE
+.TP
+.BI "remove " name
+Unregister a node from the registry.
+.TP
+.BI "edit " name " [OPTIONS]"
+Update an existing node's IP, port check, interval, or threshold in
+place, then re-validate it immediately. At least one option is
+required.
+.RS
+.TP
+.B \-\-ip \fIIP\fR
+New IP address.
+.TP
+.B \-\-port \fIPORT\fR
+Switch to checking this TCP port.
+.TP
+.B \-\-clear\-port
+Revert the node to ICMP ping (mutually exclusive with \fB\-\-port\fR).
+.TP
+.B \-\-interval \fISECONDS\fR
+Update the check interval.
+.TP
+.B \-\-threshold \fICOUNT\fR
+Update the alert threshold.
+.RE
+.TP
+.B list
+Print a table of every registered node: name, IP, check method,
+status, failures/threshold, interval, latency, and last-checked time.
+.TP
+.B test
+Send a test desktop notification via DBus to confirm alerts are
+working.
+.TP
+.B history \fR[\fB\-\-limit\fR \fIN\fR]
+Print the most recent offline/recovery events, newest first. Default
+limit 20. History is capped at 200 stored events.
+.TP
+.B help
+Open the interactive PySide6 manual window
+.RI ( manual.py ).
+.TP
+.B gui
+Explicitly launch the background tray daemon. This is what the
+systemd user service invokes; running
+.B edi-agent
+with no command does the same thing.
+.SH FILES
+.TP
+.I ~/.config/edi-alert-agent/nodes.json
+The node registry: IP, check method, interval, threshold, and last
+known status per node. Watched continuously by the background
+daemon \(em CLI changes apply without a service restart.
+.TP
+.I ~/.config/edi-alert-agent/history.json
+The most recent 200 offline/recovery alert events.
+.TP
+.I ~/.config/systemd/user/edi-alert-agent.service
+The systemd user unit that runs
+.B "edi-agent gui"
+in the background on login.
+.SH EXIT STATUS
+CLI subcommands do not currently set a distinct non-zero exit status
+on validation failure; check the printed
+.B [!]
+error message. This is a known gap \(em see the project's
+.I CLAUDE.md
+roadmap.
+.SH EXAMPLES
+.PP
+Add a node checked by ICMP ping:
+.RS
+.nf
+edi-agent add gateway 10.1.1.1
+.fi
+.RE
+.PP
+Add a node checked by a specific service port, checked every 5
+minutes, alerting on the very first failure:
+.RS
+.nf
+edi-agent add edi-database 10.1.1.20 --port 5432 --interval 300 --threshold 1
+.fi
+.RE
+.PP
+Move a node to a new IP after a network change:
+.RS
+.nf
+edi-agent edit plex --ip 10.1.1.150
+.fi
+.RE
+.PP
+Review the last 5 alerts:
+.RS
+.nf
+edi-agent history --limit 5
+.fi
+.RE
+.SH SEE ALSO
+Full project documentation, including the GUI Dashboard, is in the
+repository's
+.I README.md
+and interactive
+.IR "edi-agent help" .
+.SH BUGS
+Report issues via the project's GitHub repository.

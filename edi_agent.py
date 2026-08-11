@@ -12,15 +12,27 @@ import concurrent.futures
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (
-    QApplication, QSystemTrayIcon, QMenu, QDialog,
-    QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QPushButton, QLabel, QLineEdit, QMessageBox
+    QApplication,
+    QSystemTrayIcon,
+    QMenu,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QPushButton,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QFrame,
 )
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QIcon, QColor, QPixmap, QFont, QPainter, QPen, QBrush
 
-__version__ = "1.5.0"
+from style import DARK_GLASS_STYLE
 
+__version__ = "1.6.0"
 BASE_DIR = Path(__file__).parent.resolve()
 ASSETS_DIR = BASE_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "app_logo.png"
@@ -29,10 +41,9 @@ CONFIG_PATH = Path.home() / ".config" / "edi-alert-agent" / "nodes.json"
 HISTORY_PATH = Path.home() / ".config" / "edi-alert-agent" / "history.json"
 MAX_HISTORY_ENTRIES = 200
 
-# The background tray daemon ticks every 30s (see MonitorApp.timer), which sets
-# the effective minimum granularity for per-node check intervals below.
 DEFAULT_CHECK_INTERVAL = 30
 DEFAULT_FAILURE_THRESHOLD = 2
+
 
 def load_config():
     if not CONFIG_PATH.exists():
@@ -48,6 +59,7 @@ def load_config():
     except Exception:
         return {"nodes": {}}
 
+
 def save_config(cfg):
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
@@ -56,6 +68,7 @@ def save_config(cfg):
             json.dump(cfg, f, indent=2)
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
+
 
 def load_history():
     if not HISTORY_PATH.exists():
@@ -70,6 +83,7 @@ def load_history():
     except Exception:
         return []
 
+
 def save_history(events):
     HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(HISTORY_PATH, "w") as f:
@@ -79,15 +93,14 @@ def save_history(events):
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
+
 def record_history_event(name, event, message):
     events = load_history()
-    events.append({
-        "timestamp": time.time(),
-        "node": name,
-        "event": event,
-        "message": message
-    })
+    events.append(
+        {"timestamp": time.time(), "node": name, "event": event, "message": message}
+    )
     save_history(events[-MAX_HISTORY_ENTRIES:])
+
 
 def is_valid_ip(ip):
     try:
@@ -96,21 +109,26 @@ def is_valid_ip(ip):
     except ValueError:
         return False
 
+
 def is_valid_port(port):
     return 1 <= port <= 65535
+
 
 def is_valid_interval(seconds):
     return seconds >= 5
 
+
 def is_valid_threshold(count):
     return count >= 1
 
+
 def ping_nodes_concurrently(nodes):
-    """Check all nodes in parallel so a 30-node fleet doesn't take 30 seconds to check."""
     results = {}
     if not nodes:
         return results
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(nodes))) as executor:
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=min(32, len(nodes))
+    ) as executor:
         future_to_name = {
             executor.submit(check_target, info["ip"], info.get("port")): name
             for name, info in nodes.items()
@@ -123,15 +141,14 @@ def ping_nodes_concurrently(nodes):
                 results[name] = (False, None)
     return results
 
+
 def check_target(ip, port=None):
-    """Returns (is_online, latency_ms). Uses a TCP port check if a port is given,
-    otherwise falls back to an ICMP ping."""
     if port:
         return check_port(ip, port)
     return ping_node(ip)
 
+
 def check_port(ip, port, timeout=1):
-    # Real TCP handshake to the service port, not just host reachability.
     start = time.monotonic()
     try:
         with socket.create_connection((ip, port), timeout=timeout):
@@ -140,48 +157,50 @@ def check_port(ip, port, timeout=1):
     except OSError:
         return False, None
 
+
 def ping_node(ip):
-    # Single ICMP ping with 1-second timeout on Linux. Returns (is_online, latency_ms).
     start = time.monotonic()
     res = subprocess.run(
         ["ping", "-c", "1", "-W", "1", ip],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
     )
     is_online = res.returncode == 0
     latency_ms = round((time.monotonic() - start) * 1000, 1) if is_online else None
     return is_online, latency_ms
 
+
 def send_desktop_notification(title, message, urgency="normal"):
     try:
         icon_arg = str(LOGO_PATH) if LOGO_PATH.exists() else "network-server"
         subprocess.run(
-            ["notify-send", "-u", urgency, "-i", icon_arg, title, message],
-            check=True
+            ["notify-send", "-u", urgency, "-i", icon_arg, title, message], check=True
         )
     except Exception:
         pass
+
 
 def open_manual_window():
     if MANUAL_PATH.exists():
         subprocess.Popen([sys.executable, str(MANUAL_PATH)])
 
+
 def load_base_tray_pixmap():
     if LOGO_PATH.exists():
         base = QPixmap(str(LOGO_PATH))
     else:
-        base = QIcon.fromTheme("network-server", QIcon.fromTheme("utilities-system-monitor")).pixmap(64, 64)
+        base = QIcon.fromTheme(
+            "network-server", QIcon.fromTheme("utilities-system-monitor")
+        ).pixmap(64, 64)
     return base.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
+
 def build_badged_icon(base_pixmap, badge_color):
-    """Overlay a colored health-status dot on the tray icon's corner."""
     pixmap = QPixmap(base_pixmap.size())
     pixmap.fill(Qt.transparent)
-
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.drawPixmap(0, 0, base_pixmap)
-
     diameter = int(pixmap.width() * 0.4)
     x = pixmap.width() - diameter
     y = pixmap.height() - diameter
@@ -189,52 +208,54 @@ def build_badged_icon(base_pixmap, badge_color):
     painter.setBrush(QBrush(badge_color))
     painter.drawEllipse(x, y, diameter, diameter)
     painter.end()
-
     return QIcon(pixmap)
+
 
 # --- CLI COMMANDS ---
 def cli_add(name, ip, force=False, port=None, interval=None, threshold=None):
     if not is_valid_ip(ip):
         print(f"[!] '{ip}' is not a valid IP address.")
         return
-
     if port is not None and not is_valid_port(port):
         print(f"[!] '{port}' is not a valid port number (must be 1-65535).")
         return
-
     if interval is not None and not is_valid_interval(interval):
         print(f"[!] '{interval}' is not a valid interval (must be at least 5 seconds).")
         return
-
     if threshold is not None and not is_valid_threshold(threshold):
         print(f"[!] '{threshold}' is not a valid threshold (must be at least 1).")
         return
-
     cfg = load_config()
     if name in cfg["nodes"] and not force:
-        print(f"[!] Node '{name}' already exists ({cfg['nodes'][name]['ip']}). "
-              f"Use --force to overwrite, or 'edi-agent remove {name}' first.")
+        print(
+            f"[!] Node '{name}' already exists ({cfg['nodes'][name]['ip']}). "
+            f"Use --force to overwrite, or 'edi-agent remove {name}' first."
+        )
         return
-
     check_desc = f"TCP:{port}" if port else "ping"
-    print(f"[?] Checking reachability for '{name}' ({ip}) via {check_desc}...", end=" ", flush=True)
+    print(
+        f"[?] Checking reachability for '{name}' ({ip}) via {check_desc}...",
+        end=" ",
+        flush=True,
+    )
     is_online, latency_ms = check_target(ip, port)
     status = "online" if is_online else "offline"
-
     cfg["nodes"][name] = {
         "ip": ip,
         "port": port,
         "check_interval": interval if interval is not None else DEFAULT_CHECK_INTERVAL,
-        "failure_threshold": threshold if threshold is not None else DEFAULT_FAILURE_THRESHOLD,
+        "failure_threshold": threshold
+        if threshold is not None
+        else DEFAULT_FAILURE_THRESHOLD,
         "status": status,
         "failures": 0 if is_online else 1,
         "last_checked": time.time(),
-        "latency_ms": latency_ms
+        "latency_ms": latency_ms,
     }
     save_config(cfg)
-
     status_str = "ONLINE" if is_online else "OFFLINE"
     print(f"Done!\n[+] Added node: {name} ({ip}) -> Status: {status_str}")
+
 
 def cli_remove(name):
     cfg = load_config()
@@ -245,14 +266,22 @@ def cli_remove(name):
     else:
         print(f"[!] Node '{name}' not found.")
 
+
 def cli_edit(name, ip=None, port=None, clear_port=False, interval=None, threshold=None):
     cfg = load_config()
     if name not in cfg["nodes"]:
         print(f"[!] Node '{name}' not found.")
         return
-
-    if ip is None and port is None and not clear_port and interval is None and threshold is None:
-        print("[!] Nothing to update. Specify --ip, --port/--clear-port, --interval, and/or --threshold.")
+    if (
+        ip is None
+        and port is None
+        and not clear_port
+        and interval is None
+        and threshold is None
+    ):
+        print(
+            "[!] Nothing to update. Specify --ip, --port/--clear-port, --interval, and/or --threshold."
+        )
         return
     if port is not None and clear_port:
         print("[!] Cannot use --port and --clear-port together.")
@@ -269,7 +298,6 @@ def cli_edit(name, ip=None, port=None, clear_port=False, interval=None, threshol
     if threshold is not None and not is_valid_threshold(threshold):
         print(f"[!] '{threshold}' is not a valid threshold (must be at least 1).")
         return
-
     node = cfg["nodes"][name]
     if ip is not None:
         node["ip"] = ip
@@ -281,62 +309,86 @@ def cli_edit(name, ip=None, port=None, clear_port=False, interval=None, threshol
         node["check_interval"] = interval
     if threshold is not None:
         node["failure_threshold"] = threshold
-
     check_desc = f"TCP:{node['port']}" if node.get("port") else "ping"
-    print(f"[?] Re-checking '{name}' ({node['ip']}) via {check_desc}...", end=" ", flush=True)
+    print(
+        f"[?] Re-checking '{name}' ({node['ip']}) via {check_desc}...",
+        end=" ",
+        flush=True,
+    )
     is_online, latency_ms = check_target(node["ip"], node.get("port"))
     node["status"] = "online" if is_online else "offline"
     node["failures"] = 0 if is_online else 1
     node["last_checked"] = time.time()
     node["latency_ms"] = latency_ms
     save_config(cfg)
-
     status_str = "ONLINE" if is_online else "OFFLINE"
     print(f"Done!\n[+] Updated node: {name} ({node['ip']}) -> Status: {status_str}")
+
 
 def format_latency(latency_ms):
     return f"{latency_ms:.0f} ms" if latency_ms is not None else "--"
 
+
 def format_last_checked(timestamp):
-    return datetime.fromtimestamp(timestamp).strftime("%H:%M:%S") if timestamp else "never"
+    return (
+        datetime.fromtimestamp(timestamp).strftime("%H:%M:%S") if timestamp else "never"
+    )
+
 
 def format_check_method(port):
     return f"TCP:{port}" if port else "ping"
 
+
 def format_failures(failures, threshold):
     return f"{failures}/{threshold}"
+
 
 def format_interval(seconds):
     return f"{seconds}s"
 
+
 def format_history_timestamp(timestamp):
-    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else "unknown"
+    return (
+        datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+        if timestamp
+        else "unknown"
+    )
+
 
 def cli_list():
     cfg = load_config()
     if not cfg["nodes"]:
         print("No nodes currently monitored.")
         return
-    print(f"\n{'NAME':<20} {'IP ADDRESS':<18} {'CHECK':<10} {'STATUS':<10} {'FAILS':<8} {'INTERVAL':<10} {'LATENCY':<10} {'LAST CHECKED'}")
+    print(
+        f"\n{'NAME':<20} {'IP ADDRESS':<18} {'CHECK':<10} {'STATUS':<10} {'FAILS':<8} {'INTERVAL':<10} {'LATENCY':<10} {'LAST CHECKED'}"
+    )
     print("-" * 110)
     for name, data in cfg["nodes"].items():
-        status = data.get('status', 'unknown').upper()
-        failures = format_failures(data.get('failures', 0), data.get('failure_threshold', DEFAULT_FAILURE_THRESHOLD))
-        check_method = format_check_method(data.get('port'))
-        interval = format_interval(data.get('check_interval', DEFAULT_CHECK_INTERVAL))
-        latency = format_latency(data.get('latency_ms'))
-        last_checked = format_last_checked(data.get('last_checked'))
-        print(f"{name:<20} {data['ip']:<18} {check_method:<10} {status:<10} {failures:<8} {interval:<10} {latency:<10} {last_checked}")
+        status = data.get("status", "unknown").upper()
+        failures = format_failures(
+            data.get("failures", 0),
+            data.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD),
+        )
+        check_method = format_check_method(data.get("port"))
+        interval = format_interval(data.get("check_interval", DEFAULT_CHECK_INTERVAL))
+        latency = format_latency(data.get("latency_ms"))
+        last_checked = format_last_checked(data.get("last_checked"))
+        print(
+            f"{name:<20} {data['ip']:<18} {check_method:<10} {status:<10} {failures:<8} {interval:<10} {latency:<10} {last_checked}"
+        )
     print()
+
 
 def cli_test():
     print("[*] Triggering test notification...")
     send_desktop_notification(
         f"EDI Agent (v{__version__}): Test",
         "This is a test notification from EDI Agent! Desktop alerts are working.",
-        urgency="critical"
+        urgency="critical",
     )
     print("[+] Test notification sent to desktop.")
+
 
 def cli_history(limit=20):
     events = load_history()
@@ -348,8 +400,11 @@ def cli_history(limit=20):
     print("-" * 100)
     for e in recent:
         ts = format_history_timestamp(e.get("timestamp"))
-        print(f"{ts:<20} {e.get('node', ''):<20} {e.get('event', '').upper():<10} {e.get('message', '')}")
+        print(
+            f"{ts:<20} {e.get('node', ''):<20} {e.get('event', '').upper():<10} {e.get('message', '')}"
+        )
     print()
+
 
 # --- GUI / SYSTEM TRAY ---
 class EditNodeDialog(QDialog):
@@ -358,10 +413,8 @@ class EditNodeDialog(QDialog):
         self.name = name
         self.setWindowTitle(f"Edit Node: {name}")
         self.resize(380, 230)
-
         if LOGO_PATH.exists():
             self.setWindowIcon(QIcon(str(LOGO_PATH)))
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
@@ -374,20 +427,26 @@ class EditNodeDialog(QDialog):
 
         port_row = QHBoxLayout()
         port_row.addWidget(QLabel("Port (blank = ICMP ping):"))
-        self.port_input = QLineEdit(str(node_info["port"]) if node_info.get("port") else "")
+        self.port_input = QLineEdit(
+            str(node_info["port"]) if node_info.get("port") else ""
+        )
         self.port_input.setPlaceholderText("e.g. 5432, 32400, 8006")
         port_row.addWidget(self.port_input)
         layout.addLayout(port_row)
 
         interval_row = QHBoxLayout()
         interval_row.addWidget(QLabel("Check Interval (seconds):"))
-        self.interval_input = QLineEdit(str(node_info.get("check_interval", DEFAULT_CHECK_INTERVAL)))
+        self.interval_input = QLineEdit(
+            str(node_info.get("check_interval", DEFAULT_CHECK_INTERVAL))
+        )
         interval_row.addWidget(self.interval_input)
         layout.addLayout(interval_row)
 
         threshold_row = QHBoxLayout()
         threshold_row.addWidget(QLabel("Alert Threshold (failures):"))
-        self.threshold_input = QLineEdit(str(node_info.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD)))
+        self.threshold_input = QLineEdit(
+            str(node_info.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD))
+        )
         threshold_row.addWidget(self.threshold_input)
         layout.addLayout(threshold_row)
 
@@ -412,13 +471,124 @@ class EditNodeDialog(QDialog):
         port_text = self.port_input.text().strip()
         interval_text = self.interval_input.text().strip()
         threshold_text = self.threshold_input.text().strip()
+        if not is_valid_ip(ip):
+            self.error_label.setText(f"'{ip}' is not a valid IP address.")
+            return
+        port = None
+        clear_port = port_text == ""
+        if port_text:
+            if not port_text.isdigit():
+                self.error_label.setText("Port must be a number.")
+                return
+            port = int(port_text)
+            if not is_valid_port(port):
+                self.error_label.setText("Port must be between 1 and 65535.")
+                return
+        if not interval_text.isdigit():
+            self.error_label.setText("Check interval must be a number.")
+            return
+        interval = int(interval_text)
+        if not is_valid_interval(interval):
+            self.error_label.setText("Check interval must be at least 5 seconds.")
+            return
+        if not threshold_text.isdigit():
+            self.error_label.setText("Alert threshold must be a number.")
+            return
+        threshold = int(threshold_text)
+        if not is_valid_threshold(threshold):
+            self.error_label.setText("Alert threshold must be at least 1.")
+            return
+        cli_edit(
+            self.name,
+            ip=ip,
+            port=port,
+            clear_port=clear_port,
+            interval=interval,
+            threshold=threshold,
+        )
+        self.accept()
 
+
+class AddNodeDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Node")
+        self.resize(380, 260)
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Node Name:"))
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("e.g. plex")
+        name_row.addWidget(self.name_input)
+        layout.addLayout(name_row)
+
+        ip_row = QHBoxLayout()
+        ip_row.addWidget(QLabel("IP Address:"))
+        self.ip_input = QLineEdit()
+        self.ip_input.setPlaceholderText("e.g. 10.1.1.99")
+        ip_row.addWidget(self.ip_input)
+        layout.addLayout(ip_row)
+
+        port_row = QHBoxLayout()
+        port_row.addWidget(QLabel("Port (blank = ICMP ping):"))
+        self.port_input = QLineEdit()
+        self.port_input.setPlaceholderText("e.g. 5432, 32400, 8006")
+        port_row.addWidget(self.port_input)
+        layout.addLayout(port_row)
+
+        interval_row = QHBoxLayout()
+        interval_row.addWidget(QLabel("Check Interval (seconds):"))
+        self.interval_input = QLineEdit(str(DEFAULT_CHECK_INTERVAL))
+        interval_row.addWidget(self.interval_input)
+        layout.addLayout(interval_row)
+
+        threshold_row = QHBoxLayout()
+        threshold_row.addWidget(QLabel("Alert Threshold (failures):"))
+        self.threshold_input = QLineEdit(str(DEFAULT_FAILURE_THRESHOLD))
+        threshold_row.addWidget(self.threshold_input)
+        layout.addLayout(threshold_row)
+
+        self.error_label = QLabel("")
+        self.error_label.setStyleSheet("color: #e74c3c;")
+        self.error_label.setWordWrap(True)
+        layout.addWidget(self.error_label)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton("Add Node")
+        save_btn.setObjectName("PrimaryButton")
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self.on_save)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+    def on_save(self):
+        name = self.name_input.text().strip()
+        ip = self.ip_input.text().strip()
+        port_text = self.port_input.text().strip()
+        interval_text = self.interval_input.text().strip()
+        threshold_text = self.threshold_input.text().strip()
+
+        if not name:
+            self.error_label.setText("Node name cannot be blank.")
+            return
+        if name in load_config()["nodes"]:
+            self.error_label.setText(f"A node named '{name}' already exists.")
+            return
         if not is_valid_ip(ip):
             self.error_label.setText(f"'{ip}' is not a valid IP address.")
             return
 
         port = None
-        clear_port = (port_text == "")
         if port_text:
             if not port_text.isdigit():
                 self.error_label.setText("Port must be a number.")
@@ -444,19 +614,17 @@ class EditNodeDialog(QDialog):
             self.error_label.setText("Alert threshold must be at least 1.")
             return
 
-        cli_edit(self.name, ip=ip, port=port, clear_port=clear_port,
-                  interval=interval, threshold=threshold)
+        cli_add(name, ip, port=port, interval=interval, threshold=threshold)
         self.accept()
+
 
 class HistoryDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"EDI Agent (v{__version__}) - Alert History")
         self.resize(680, 420)
-
         if LOGO_PATH.exists():
             self.setWindowIcon(QIcon(str(LOGO_PATH)))
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
@@ -484,23 +652,22 @@ class HistoryDialog(QDialog):
         btn_row.addStretch()
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
-
         self.reload_data()
 
     def reload_data(self):
         events = list(reversed(load_history()))
         self.table.setRowCount(len(events))
         for row, event in enumerate(events):
-            time_item = QTableWidgetItem(format_history_timestamp(event.get("timestamp")))
+            time_item = QTableWidgetItem(
+                format_history_timestamp(event.get("timestamp"))
+            )
             node_item = QTableWidgetItem(event.get("node", ""))
             kind_item = QTableWidgetItem(event.get("event", "").upper())
             message_item = QTableWidgetItem(event.get("message", ""))
-
             if event.get("event") == "offline":
                 kind_item.setForeground(QColor("#e74c3c"))
             elif event.get("event") == "online":
                 kind_item.setForeground(QColor("#2ecc71"))
-
             self.table.setItem(row, 0, time_item)
             self.table.setItem(row, 1, node_item)
             self.table.setItem(row, 2, kind_item)
@@ -508,97 +675,211 @@ class HistoryDialog(QDialog):
 
     def clear_history(self):
         reply = QMessageBox.question(
-            self, "Clear History",
+            self,
+            "Clear History",
             "Delete all alert history? This cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
             save_history([])
             self.reload_data()
 
+
 class NodeManagerDialog(QDialog):
     def __init__(self, monitor_app=None):
         super().__init__()
         self.monitor_app = monitor_app
-        self.setWindowTitle(f"EDI Agent (v{__version__}) - Monitored Nodes")
-        self.resize(580, 400)
-        
+        self.setWindowTitle(f"EDI Agent (v{__version__}) - Dashboard")
+        self.resize(980, 560)
+        self.setMinimumSize(760, 440)
+
         if LOGO_PATH.exists():
             self.setWindowIcon(QIcon(str(LOGO_PATH)))
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(12)
-        
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
         # --- HEADER SECTION ---
         header_layout = QHBoxLayout()
         header_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        
+
         if LOGO_PATH.exists():
             logo_label = QLabel()
-            pixmap = QPixmap(str(LOGO_PATH)).scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap = QPixmap(str(LOGO_PATH)).scaled(
+                36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
             logo_label.setPixmap(pixmap)
             header_layout.addWidget(logo_label)
-        
-        title_label = QLabel(f"EDI Agent (v{__version__})")
+
+        title_label = QLabel("Infrastructure Dashboard")
         font = QFont()
         font.setPointSize(16)
         font.setBold(True)
         title_label.setFont(font)
         header_layout.addWidget(title_label)
-        
+
         header_layout.addStretch()
-        
-        # '?' Help Button
+
         self.help_btn = QPushButton("?")
-        self.help_btn.setFixedWidth(28)
+        self.help_btn.setObjectName("IconButton")
+        self.help_btn.setFixedSize(32, 32)
         self.help_btn.setToolTip("Open User Manual & Help")
         self.help_btn.clicked.connect(open_manual_window)
         header_layout.addWidget(self.help_btn)
-        
+
         layout.addLayout(header_layout)
-        
+
+        # --- METRIC SUMMARY CARDS ROW ---
+        metrics_layout = QHBoxLayout()
+        metrics_layout.setSpacing(12)
+
+        self.card_total = self.create_metric_card("Total Nodes", "0", "blue", "#3b82f6")
+        self.card_online = self.create_metric_card("Online", "0", "green", "#2ecc71")
+        self.card_offline = self.create_metric_card("Offline", "0", "red", "#e74c3c")
+        self.card_latency = self.create_metric_card("Avg Latency", "--", "purple", "#8b5cf6")
+
+        metrics_layout.addWidget(self.card_total)
+        metrics_layout.addWidget(self.card_online)
+        metrics_layout.addWidget(self.card_offline)
+        metrics_layout.addWidget(self.card_latency)
+
+        layout.addLayout(metrics_layout)
+
         # --- TABLE SECTION ---
         self.table = QTableWidget()
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels(
-            ["Node Name", "IP Address", "Check", "Status", "Fails", "Interval", "Latency", "Last Checked"]
+            [
+                "Node Name",
+                "IP Address",
+                "Check",
+                "Status",
+                "Fails",
+                "Interval",
+                "Latency",
+                "Last Checked",
+            ]
         )
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)      # Node Name
+        header.setSectionResizeMode(1, QHeaderView.Stretch)      # IP Address
+        for col in range(2, 8):
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
         self.table.itemDoubleClicked.connect(self.open_edit_dialog)
         layout.addWidget(self.table)
 
         # --- ACTION BAR SECTION ---
         action_layout = QHBoxLayout()
-        self.info_label = QLabel("Auto-checking every 30s • double-click a row to edit")
-        self.edit_btn = QPushButton("Edit Selected")
+        self.info_label = QLabel("Auto-checking every 30s • Double-click to edit")
+        self.info_label.setStyleSheet("color: #64748b; font-size: 11px;")
+
+        self.add_btn = QPushButton("Add")
+        self.add_btn.setToolTip("Add a new node")
+        self.add_btn.clicked.connect(self.open_add_dialog)
+
+        self.edit_btn = QPushButton("Edit")
+        self.edit_btn.setToolTip("Edit the selected node")
         self.edit_btn.clicked.connect(self.open_edit_dialog_for_selection)
-        self.history_btn = QPushButton("Alert History")
+
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setToolTip("Remove the selected node")
+        self.delete_btn.clicked.connect(self.delete_selected)
+
+        self.history_btn = QPushButton("History")
+        self.history_btn.setToolTip("View alert history")
         self.history_btn.clicked.connect(self.open_history_dialog)
-        self.refresh_btn = QPushButton("Refresh / Check Now")
+
+        self.refresh_btn = QPushButton("Refresh Now")
+        self.refresh_btn.setObjectName("PrimaryButton")
         self.refresh_btn.clicked.connect(self.manual_refresh)
 
         action_layout.addWidget(self.info_label)
         action_layout.addStretch()
+        action_layout.addWidget(self.add_btn)
         action_layout.addWidget(self.edit_btn)
+        action_layout.addWidget(self.delete_btn)
         action_layout.addWidget(self.history_btn)
         action_layout.addWidget(self.refresh_btn)
-
         layout.addLayout(action_layout)
 
         self.reload_data()
 
+    def create_metric_card(self, title, value, accent, accent_color):
+        card = QFrame()
+        card.setObjectName("MetricCard")
+        card.setProperty("accent", accent)
+        card.setFixedHeight(72)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 12, 16, 12)
+        card_layout.setSpacing(4)
+
+        title_lbl = QLabel(title)
+        title_lbl.setObjectName("MetricTitle")
+
+        val_lbl = QLabel(value)
+        val_lbl.setObjectName(f"Val_{title.replace(' ', '')}")
+        val_lbl.setStyleSheet(
+            f"font-size: 22px; font-weight: 700; color: {accent_color}; background: transparent; border: none;"
+        )
+
+        card_layout.addWidget(title_lbl)
+        card_layout.addWidget(val_lbl)
+        return card
+
+    def update_metrics(self, nodes):
+        total = len(nodes)
+        online = sum(1 for info in nodes.values() if info.get("status") == "online")
+        offline = sum(1 for info in nodes.values() if info.get("status") == "offline")
+
+        latencies = [
+            info.get("latency_ms")
+            for info in nodes.values()
+            if info.get("latency_ms") is not None
+        ]
+        avg_lat = f"{sum(latencies) / len(latencies):.0f} ms" if latencies else "--"
+
+        self.card_total.findChild(QLabel, "Val_TotalNodes").setText(str(total))
+        self.card_online.findChild(QLabel, "Val_Online").setText(str(online))
+        self.card_offline.findChild(QLabel, "Val_Offline").setText(str(offline))
+        self.card_latency.findChild(QLabel, "Val_AvgLatency").setText(avg_lat)
+
     def open_history_dialog(self):
         dialog = HistoryDialog(parent=self)
         dialog.exec()
+
+    def open_add_dialog(self):
+        dialog = AddNodeDialog(parent=self)
+        if dialog.exec():
+            self.reload_data()
+            if self.monitor_app:
+                self.monitor_app.refresh_tray_icon(load_config())
 
     def open_edit_dialog_for_selection(self):
         row = self.table.currentRow()
         if row < 0:
             return
         self.open_edit_dialog(self.table.item(row, 0))
+
+    def delete_selected(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        name = self.table.item(row, 0).text()
+        reply = QMessageBox.question(
+            self, "Delete Node",
+            f"Remove '{name}' from monitoring? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            cli_remove(name)
+            self.reload_data()
+            if self.monitor_app:
+                self.monitor_app.refresh_tray_icon(load_config())
 
     def open_edit_dialog(self, item):
         row = item.row()
@@ -607,7 +888,6 @@ class NodeManagerDialog(QDialog):
         node = cfg["nodes"].get(name)
         if not node:
             return
-
         dialog = EditNodeDialog(name, node, parent=self)
         if dialog.exec():
             self.reload_data()
@@ -616,9 +896,9 @@ class NodeManagerDialog(QDialog):
 
     def manual_refresh(self):
         self.refresh_btn.setEnabled(False)
-        self.refresh_btn.setText("Pinging Nodes...")
+        self.refresh_btn.setText("Checking...")
         QApplication.processEvents()
-        
+
         if self.monitor_app:
             self.monitor_app.check_nodes(force=True)
         else:
@@ -631,16 +911,19 @@ class NodeManagerDialog(QDialog):
                 info["last_checked"] = now
                 info["latency_ms"] = latency_ms
             save_config(cfg)
-            
+
         self.reload_data()
-        self.refresh_btn.setText("Refresh / Check Now")
+        self.refresh_btn.setText("Refresh Now")
         self.refresh_btn.setEnabled(True)
 
     def reload_data(self):
         cfg = load_config()
+        nodes = cfg.get("nodes", {})
+        self.update_metrics(nodes)
+
         self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(cfg["nodes"]))
-        for row, (name, info) in enumerate(cfg["nodes"].items()):
+        self.table.setRowCount(len(nodes))
+        for row, (name, info) in enumerate(nodes.items()):
             status = info.get("status", "unknown").upper()
             failures = info.get("failures", 0)
             threshold = info.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD)
@@ -650,9 +933,13 @@ class NodeManagerDialog(QDialog):
             item_check = QTableWidgetItem(format_check_method(info.get("port")))
             item_status = QTableWidgetItem(status)
             item_failures = QTableWidgetItem(format_failures(failures, threshold))
-            item_interval = QTableWidgetItem(format_interval(info.get("check_interval", DEFAULT_CHECK_INTERVAL)))
+            item_interval = QTableWidgetItem(
+                format_interval(info.get("check_interval", DEFAULT_CHECK_INTERVAL))
+            )
             item_latency = QTableWidgetItem(format_latency(info.get("latency_ms")))
-            item_last_checked = QTableWidgetItem(format_last_checked(info.get("last_checked")))
+            item_last_checked = QTableWidgetItem(
+                format_last_checked(info.get("last_checked"))
+            )
 
             item_check.setTextAlignment(Qt.AlignCenter)
             item_status.setTextAlignment(Qt.AlignCenter)
@@ -660,14 +947,16 @@ class NodeManagerDialog(QDialog):
             item_interval.setTextAlignment(Qt.AlignCenter)
             item_latency.setTextAlignment(Qt.AlignCenter)
             item_last_checked.setTextAlignment(Qt.AlignCenter)
+
             if status == "ONLINE":
                 item_status.setForeground(QColor("#2ecc71"))
             elif status == "OFFLINE":
                 item_status.setForeground(QColor("#e74c3c"))
             else:
-                item_status.setForeground(QColor("#95a5a6"))
+                item_status.setForeground(QColor("#64748b"))
+
             if failures > 0:
-                item_failures.setForeground(QColor("#e67e22"))
+                item_failures.setForeground(QColor("#f59e0b"))
 
             self.table.setItem(row, 0, item_name)
             self.table.setItem(row, 1, item_ip)
@@ -679,12 +968,15 @@ class NodeManagerDialog(QDialog):
             self.table.setItem(row, 7, item_last_checked)
         self.table.setSortingEnabled(True)
 
+
 class MonitorApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
 
-        # Tray Icon
+        # Apply Modern Glass Theme Globally
+        self.app.setStyleSheet(DARK_GLASS_STYLE)
+
         base_pixmap = load_base_tray_pixmap()
         self.icon_neutral = QIcon(base_pixmap)
         self.icon_online = build_badged_icon(base_pixmap, QColor("#2ecc71"))
@@ -695,37 +987,27 @@ class MonitorApp:
         self.tray.setToolTip(f"EDI Agent (v{__version__})")
         self.tray.setVisible(True)
 
-        # Context Menu
         self.menu = QMenu()
         self.status_action = self.menu.addAction(f"EDI Agent (v{__version__}): Active")
         self.status_action.setEnabled(False)
         self.menu.addSeparator()
-
         self.manage_action = self.menu.addAction("Show Status Window")
         self.manage_action.triggered.connect(self.show_manager)
-
         self.history_action = self.menu.addAction("Alert History")
         self.history_action.triggered.connect(self.show_history)
-
         self.help_action = self.menu.addAction("Help / Manual")
         self.help_action.triggered.connect(open_manual_window)
-
         self.test_action = self.menu.addAction("Send Test Alert")
         self.test_action.triggered.connect(self.trigger_test_alert)
-
         self.quit_action = self.menu.addAction("Quit Agent")
         self.quit_action.triggered.connect(self.app.quit)
-
         self.tray.setContextMenu(self.menu)
 
-        # 30-Second Ping Loop
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_nodes)
         self.timer.start(30000)
 
-        # Immediate check on launch
         QTimer.singleShot(500, self.check_nodes)
-
         self.dialog = None
 
     def trigger_test_alert(self):
@@ -733,7 +1015,7 @@ class MonitorApp:
             f"EDI Agent (v{__version__}): Test",
             "This is a test notification from EDI Agent!",
             QSystemTrayIcon.MessageIcon.Information,
-            5000
+            5000,
         )
 
     def check_nodes(self, force=False):
@@ -741,13 +1023,14 @@ class MonitorApp:
         if not cfg["nodes"]:
             self.refresh_tray_icon(cfg)
             return
-
         now = time.time()
         due_nodes = {
-            name: info for name, info in cfg["nodes"].items()
-            if force or now - info.get("last_checked", 0) >= info.get("check_interval", DEFAULT_CHECK_INTERVAL)
+            name: info
+            for name, info in cfg["nodes"].items()
+            if force
+            or now - info.get("last_checked", 0)
+            >= info.get("check_interval", DEFAULT_CHECK_INTERVAL)
         }
-
         if due_nodes:
             results = ping_nodes_concurrently(due_nodes)
             for name, info in due_nodes.items():
@@ -756,10 +1039,8 @@ class MonitorApp:
                 prev_status = info.get("status", "unknown")
                 failures = info.get("failures", 0)
                 threshold = info.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD)
-
                 info["last_checked"] = now
                 info["latency_ms"] = latency_ms
-
                 if not is_online:
                     failures += 1
                     info["failures"] = failures
@@ -770,7 +1051,7 @@ class MonitorApp:
                             "EDI ALERT: Node Offline",
                             message,
                             QSystemTrayIcon.MessageIcon.Critical,
-                            10000
+                            10000,
                         )
                         record_history_event(name, "offline", message)
                 else:
@@ -783,14 +1064,11 @@ class MonitorApp:
                                 "EDI ALERT: Node Restored",
                                 message,
                                 QSystemTrayIcon.MessageIcon.Information,
-                                5000
+                                5000,
                             )
                             record_history_event(name, "online", message)
-
             save_config(cfg)
-
         self.refresh_tray_icon(cfg)
-
         if self.dialog and self.dialog.isVisible():
             self.dialog.reload_data()
 
@@ -800,11 +1078,12 @@ class MonitorApp:
             self.tray.setIcon(self.icon_neutral)
             self.tray.setToolTip(f"EDI Agent (v{__version__}): No nodes monitored")
             return
-
         down = [name for name, info in nodes.items() if info.get("status") == "offline"]
         if down:
             self.tray.setIcon(self.icon_offline)
-            self.tray.setToolTip(f"EDI Agent (v{__version__}): {len(down)} node(s) offline")
+            self.tray.setToolTip(
+                f"EDI Agent (v{__version__}): {len(down)} node(s) offline"
+            )
         else:
             self.tray.setIcon(self.icon_online)
             self.tray.setToolTip(f"EDI Agent (v{__version__}): All nodes online")
@@ -825,6 +1104,7 @@ class MonitorApp:
     def run(self):
         sys.exit(self.app.exec())
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=f"EDI Agent (v{__version__})")
     subparsers = parser.add_subparsers(dest="command")
@@ -832,42 +1112,75 @@ if __name__ == "__main__":
     add_parser = subparsers.add_parser("add", help="Add a node to monitor")
     add_parser.add_argument("name", help="Node identifier (e.g. plex)")
     add_parser.add_argument("ip", help="IP address (e.g. 10.1.1.99)")
-    add_parser.add_argument("--force", action="store_true", help="Overwrite an existing node with the same name")
-    add_parser.add_argument("--port", type=int, default=None,
-                             help="Check this TCP port instead of ICMP ping (e.g. 5432 for Postgres, 32400 for Plex)")
-    add_parser.add_argument("--interval", type=int, default=None,
-                             help=f"How often to check this node, in seconds (default {DEFAULT_CHECK_INTERVAL}, minimum 5)")
-    add_parser.add_argument("--threshold", type=int, default=None,
-                             help=f"Consecutive failures required before alerting (default {DEFAULT_FAILURE_THRESHOLD})")
+    add_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing node with the same name",
+    )
+    add_parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="Check this TCP port instead of ICMP ping",
+    )
+    add_parser.add_argument(
+        "--interval",
+        type=int,
+        default=None,
+        help=f"Check interval in seconds (default {DEFAULT_CHECK_INTERVAL})",
+    )
+    add_parser.add_argument(
+        "--threshold",
+        type=int,
+        default=None,
+        help=f"Failure threshold (default {DEFAULT_FAILURE_THRESHOLD})",
+    )
 
     rem_parser = subparsers.add_parser("remove", help="Remove a monitored node")
     rem_parser.add_argument("name", help="Node identifier")
 
-    edit_parser = subparsers.add_parser("edit", help="Edit an existing node's IP, port check, interval, or threshold")
+    edit_parser = subparsers.add_parser("edit", help="Edit an existing node")
     edit_parser.add_argument("name", help="Node identifier")
     edit_parser.add_argument("--ip", help="New IP address")
-    edit_parser.add_argument("--port", type=int, help="Check this TCP port instead of ICMP ping")
-    edit_parser.add_argument("--clear-port", action="store_true", help="Revert to ICMP ping (remove port check)")
-    edit_parser.add_argument("--interval", type=int, help="How often to check this node, in seconds (minimum 5)")
-    edit_parser.add_argument("--threshold", type=int, help="Consecutive failures required before alerting")
+    edit_parser.add_argument("--port", type=int, help="Check TCP port")
+    edit_parser.add_argument(
+        "--clear-port", action="store_true", help="Revert to ICMP ping"
+    )
+    edit_parser.add_argument("--interval", type=int, help="Check interval in seconds")
+    edit_parser.add_argument("--threshold", type=int, help="Failure threshold")
 
     subparsers.add_parser("list", help="List monitored nodes")
     subparsers.add_parser("test", help="Send a test notification")
-    hist_parser = subparsers.add_parser("history", help="Show recent offline/recovery alert history")
-    hist_parser.add_argument("--limit", type=int, default=20, help="Number of recent events to show (default 20)")
+
+    hist_parser = subparsers.add_parser("history", help="Show alert history")
+    hist_parser.add_argument(
+        "--limit", type=int, default=20, help="Number of events to show"
+    )
+
     subparsers.add_parser("help", help="Open manual window")
     subparsers.add_parser("gui", help="Run system tray monitor agent")
 
     args = parser.parse_args()
-
     if args.command == "add":
-        cli_add(args.name, args.ip, force=args.force, port=args.port,
-                interval=args.interval, threshold=args.threshold)
+        cli_add(
+            args.name,
+            args.ip,
+            force=args.force,
+            port=args.port,
+            interval=args.interval,
+            threshold=args.threshold,
+        )
     elif args.command == "remove":
         cli_remove(args.name)
     elif args.command == "edit":
-        cli_edit(args.name, ip=args.ip, port=args.port, clear_port=args.clear_port,
-                  interval=args.interval, threshold=args.threshold)
+        cli_edit(
+            args.name,
+            ip=args.ip,
+            port=args.port,
+            clear_port=args.clear_port,
+            interval=args.interval,
+            threshold=args.threshold,
+        )
     elif args.command == "list":
         cli_list()
     elif args.command == "test":

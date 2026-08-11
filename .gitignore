@@ -19,5 +19,8 @@ __pycache__/
 nodes.json
 history.json
 
+# Local screenshots may reveal real LAN IPs - keep out of the public repo
+current.png
+
 # Logs
 *.log

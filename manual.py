@@ -70,12 +70,14 @@ MANUAL_HTML = f"""
 
 <h3>Desktop UI & System Tray Features</h3>
 <ul>
-  <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the status, open this manual, send test alerts, or exit the agent.</li>
-  <li><b>Status Window:</b> Displays tracked nodes with color-coded status badges (<b><font color="#2ecc71">ONLINE</font></b> / <b><font color="#e74c3c">OFFLINE</font></b>), the check method (ping or TCP port), failures/threshold, check interval, latency, and last-checked time. Click any column header to sort.</li>
-  <li><b>Edit Node:</b> Double-click a row (or select it and click <b>Edit Selected</b>) to change its IP or check method without using the terminal. Saving re-validates the node immediately.</li>
-  <li><b>Alert History:</b> Open via the tray menu or the <b>Alert History</b> button in the Status Window to see every past offline/recovery event with a timestamp &mdash; even after the desktop popup is gone. Includes a <b>Clear History</b> option.</li>
-  <li><b>Refresh / Check Now:</b> Pings all monitored nodes on demand.</li>
-  <li><b>Help Button (<code>?</code>):</b> Click the <code>?</code> button at the top right of the status window to open this manual anytime.</li>
+  <li><b>System Tray Icon:</b> Docks near the clock and shows a live health badge &mdash; <b><font color="#2ecc71">green</font></b> when every node is online, <b><font color="#e74c3c">red</font></b> if any node is down. Hover for a summary; right-click to view the Dashboard, open this manual, send test alerts, or exit the agent.</li>
+  <li><b>Infrastructure Dashboard:</b> Metric cards (Total Nodes, Online, Offline, Avg Latency) summarize fleet health at a glance above a sortable table (click any column header) &mdash; check method (ping or TCP port), status, failures/threshold, check interval, latency, and last-checked time per node.</li>
+  <li><b>Add Node:</b> Click <b>Add</b> to register a new node &mdash; name, IP, optional TCP port, check interval, and alert threshold &mdash; without touching the terminal.</li>
+  <li><b>Edit Node:</b> Double-click a row (or select it and click <b>Edit</b>) to change its IP, check method, interval, or threshold. Saving re-validates the node immediately.</li>
+  <li><b>Delete Node:</b> Select a row and click <b>Delete</b> to remove it from monitoring, after a confirmation prompt.</li>
+  <li><b>Alert History:</b> Open via the tray menu or the <b>History</b> button to see every past offline/recovery event with a timestamp &mdash; even after the desktop popup is gone. Includes a <b>Clear History</b> option.</li>
+  <li><b>Refresh Now:</b> Checks every monitored node on demand, bypassing each node's own check interval.</li>
+  <li><b>Help Button (<code>?</code>):</b> Click the circular <code>?</code> button at the top right of the Dashboard to open this manual anytime.</li>
 </ul>
 
 <hr>
